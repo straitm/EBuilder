@@ -15,7 +15,7 @@ ROOTCFLAGS   := $(shell root-config --cflags)
 ROOTLDFLAGS  := $(shell root-config --ldflags)
 ROOTLIBS     := $(shell root-config --libs)
 
-CXXFLAGS        = -O2 -Wall -fPIC $(INC) -I/usr/include/mysql -I/usr/include/mysql++ 
+CXXFLAGS        = -O2 -Wall -fPIC $(INC) -I/usr/include/mysql -I/usr/include/mysql++
 LDFLAGS       = -O2 $(INC)
 SOFLAGS       = -shared
 
@@ -29,7 +29,7 @@ TARGET=$(MAIN:%.cxx=$(BINDIR)/%)
 all: dir $(TARGET)
 #------------------------------------------------------------------------------
 
-USBSTREAMO        = $(TMPDIR)/USBstream.o 
+USBSTREAMO        = $(TMPDIR)/USBstream.o
 USBSTREAMSO       = $(TMPDIR)/libUSBstream.so
 USBSTREAMLIB      = $(shell pwd)/$(USBSTREAMSO)
 
