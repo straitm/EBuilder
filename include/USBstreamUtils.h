@@ -3,11 +3,11 @@
 
 #include "USBstream-TypeDef.h"
 
-#include<stdio.h>
-#include<stdlib.h>
-#include<iostream>
-#include<vector>
-#include<string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <iostream>
+#include <vector>
+#include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
@@ -84,8 +84,8 @@ inline float config_float(const char* path, const char* key)
 }
 
 // Load config data
-inline void get_gaibu_config() {
-
+inline void get_gaibu_config()
+{
   char spaceIP_path[BUFSIZE];
   sprintf(spaceIP_path,"%s/config/DCSpaceIP.config",getenv("DCONLINE_PATH"));
 
@@ -131,8 +131,8 @@ inline int init_socket(struct sockaddr_in *serveraddr, char *hostname, int portn
 }
 
 // system call to send mail using mailx and ebuilder_notify.sh sript in DCOV/tools
-inline void send_mail(int priority, char *gaibu_buf, int run_num = 9999999) {
-
+inline void send_mail(int priority, char *gaibu_buf, int run_num = 9999999)
+{
   //Email format:
   // Sub: Process Name - Error level
   // Body:
@@ -165,6 +165,7 @@ inline void send_mail(int priority, char *gaibu_buf, int run_num = 9999999) {
   //printf("mail_command: %s\n",mail_command);
   system(mail_command);
 }
+
 // Send gaibu message and write to the syslog
 inline int gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber="")
 {
@@ -251,8 +252,8 @@ inline int gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber="")
 }
 
 // Start gaibu
-inline void start_gaibu() {
-
+inline void start_gaibu()
+{
   openlog("OV EBuilder", LOG_NDELAY, LOG_USER);
 
   gaibu_sockfd = -1;
@@ -262,7 +263,6 @@ inline void start_gaibu() {
   sprintf(gaibu_debug_msg,"OV Event Builder Started");
 
   //gaibu_msg(MNOTICE, gaibu_debug_msg);
-
 }
 
 inline bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew=0)

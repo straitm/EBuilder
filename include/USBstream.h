@@ -15,7 +15,7 @@
 // DOGSifier header files needed for semaphore:
 #include <stdio.h>
 #include <cstdlib>
-#include <sys/ipc.h>     /* general SysV IPC structures         */
+#include <sys/ipc.h>   /* general SysV IPC structures         */
 #include <sys/sem.h>   /* semaphore functions and structs.    */
 #include <exception>
 #include <sem_tools.hh>

@@ -101,8 +101,8 @@ bool write_endofrun_block(std::string file, int fd);
 bool write_ebsummary();
 bool write_ebretval(int val);
 
-int main(int argc, char **argv) {
-
+int main(int argc, char **argv)
+{
   if(argc <= 1) {
     printf("Usage: ./EventBuilder -r <run_number> [opt args]\n");
     printf("For help: /EventBuilder -h\n");
@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load baseline data
   timeout = time(0);
   while(GetBaselines()==false) { // Get baselines
@@ -167,13 +167,13 @@ int main(int argc, char **argv) {
     else sleep(2); // FixME: optimize?
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set Thresholds
   for(int i = 0; i<numUSB-numFanUSB; i++) {
     OVUSBStream[Datamap[i]].SetThresh(Threshold,(int)EBTrigMode); // Set threshold only for data streams
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Locate existing binary data and create output folder
   OutputFolder = OutputFolder + "Run_" + RunNumber;
   timeout = time(0);
@@ -198,7 +198,7 @@ int main(int argc, char **argv) {
     else sleep(1);
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Create DOGSifier semaphores
   if(DOGSifier) {
     //sem_id = create_semaphore('S',sname); // Create semaphore
@@ -206,7 +206,7 @@ int main(int argc, char **argv) {
     //init_semaphore(sem_id,0); // Do not initialize semaphore to 0
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // This is the main Event Builder loop
   while(true) {
 
@@ -293,7 +293,7 @@ int main(int argc, char **argv) {
 
     cout << "Joined all threads!\n";
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Rename file names
     for(int i = 0; i<numUSB; i++) {
       tempfilename = OVUSBStream[i].GetFileName();
@@ -524,7 +524,9 @@ void *joiner(void *ptr) // This thread joins the above threads
   return 0;
 }
 
-int open_file(std::string name){ // opens output data file
+// opens output data file
+int open_file(std::string name)
+{
   int temp_dataFile = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
   //cout << "File Name: "<< name <<endl;
   if ( temp_dataFile >= 0 ) {
@@ -540,8 +542,8 @@ int open_file(std::string name){ // opens output data file
   return temp_dataFile;
 }
 
-int check_disk_space(std::string dir) {
-
+int check_disk_space(std::string dir)
+{
   struct statvfs fiData;
   int free_space_percent;
   if((statvfs(dir.c_str(),&fiData)) < 0 ) {
@@ -570,7 +572,9 @@ int check_disk_space(std::string dir) {
   return 0;
 }
 
-void check_status() {  // FixME: To be optimized
+// FixME: To be optimized
+void check_status()
+{
   // Performancs monitor
   cout << "Found " << files.size() << " files." << endl;
   int f_delay = (int)(latency*files.size()/numUSB/20);
@@ -607,8 +611,9 @@ void check_status() {  // FixME: To be optimized
   }
 }
 
-bool LoadRun(std::string &datadir, std::string outdatadir){ // Just check that it exists
-
+// Just check that it exists
+bool LoadRun(std::string &datadir, std::string outdatadir)
+{
   datadir = DataFolder + "/Run_" + RunNumber + "/binary";
 
   files.clear();
@@ -665,7 +670,9 @@ bool LoadRun(std::string &datadir, std::string outdatadir){ // Just check that i
   return true;
 }
 
-int LoadAll(std::string dir) {  // This function checks to see if files are ready to be processed
+// This function checks to see if files are ready to be processed
+int LoadAll(std::string dir)
+{
 
   int r = check_disk_space(dir);
   if(r < 0) {
@@ -962,8 +969,8 @@ void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int
   delete CurrHit;
 }
 
-int check_options(int argc, char **argv) {
-
+int check_options(int argc, char **argv)
+{
   int index;
   char c;
   bool show_help=0;
@@ -1035,9 +1042,9 @@ int check_options(int argc, char **argv) {
   return 1;
 }
 
-bool GetBaselines(){
-
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+bool GetBaselines()
+{
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search baseline directory for files and sort them lexigraphically
   std::string in_dir = DataFolder + "/Run_" + RunNumber + "/binary";
   //std::string in_dir = DataFolder + "/Run_" + RunNumber + "/baseline";
@@ -1065,7 +1072,7 @@ bool GetBaselines(){
 
   sort(in_files.begin(),in_files.end());
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Sanity check on number of baseline files
   if((int)in_files.size() != numUSB-numFanUSB) {
     sprintf(gaibu_debug_msg,"Fatal Error: Baseline file count (%lu) != numUSB (%d) in directory %s", (long int)in_files.size(), numUSB, in_dir.c_str());
@@ -1074,7 +1081,7 @@ bool GetBaselines(){
     return false;
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set USB numbers for each OVUSBStream and load baseline files
   vector<std::string>::iterator in_files_it=in_files.begin();
   std::string fusb;
@@ -1093,7 +1100,7 @@ bool GetBaselines(){
     in_files_it++;
   }
   //return true;
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Decode all files at once and load into memory
   for(int j=0; j<numUSB-numFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n",Datamap[j]);
@@ -1114,7 +1121,7 @@ bool GetBaselines(){
 
   cout << "Joined all threads!\n";
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Build baseline tables
   int **baselines = new int*[maxModules];
   for(int i = 0; i<maxModules; i++) {
@@ -1143,7 +1150,7 @@ bool GetBaselines(){
     }
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Delete pointers
   for(int i = 0; i<maxModules; i++) {
     delete [] baselines[i];
@@ -1155,8 +1162,8 @@ bool GetBaselines(){
 
 }
 
-void CalculatePedestal(DataVector* BaselineData, int **baseptr) {
-
+void CalculatePedestal(DataVector* BaselineData, int **baseptr)
+{
   //int numChannels = 64;
   double baseline[maxModules][numChannels] = {};
   int counter[maxModules][numChannels] = {};
@@ -1206,8 +1213,8 @@ void CalculatePedestal(DataVector* BaselineData, int **baseptr) {
   }
 }
 
-bool WriteBaselineTable(int **baseptr, int usb) {
-
+bool WriteBaselineTable(int **baseptr, int usb)
+{
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
   //mysqlpp::Query query;
@@ -1273,8 +1280,8 @@ bool WriteBaselineTable(int **baseptr, int usb) {
   return true;
 }
 
-bool read_summary_table() {
-
+bool read_summary_table()
+{
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
   //mysqlpp::Query query;
@@ -1299,7 +1306,7 @@ bool read_summary_table() {
     return false;
   }
 
-  ///////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Get mysql config table name
   char insert_base[BUFSIZE] = "SELECT Run_number,config_table FROM OV_runsummary WHERE Run_number = ";
   char query_string[BUFSIZE];
@@ -1328,7 +1335,7 @@ bool read_summary_table() {
   char config_table[BUFSIZE];
   strcpy(config_table,res[0][1].c_str());
 
-  ////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Count number of distinct USBs
   strcpy(insert_base,"SELECT DISTINCT USB_serial FROM ");
   sprintf(query_string,"%s%s ORDER BY USB_serial;",insert_base,config_table);
@@ -1352,7 +1359,7 @@ bool read_summary_table() {
     OVUSBStream[i].SetUSB(atoi(res[i][0]));
   }
 
-  ////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Count number of non fan-in USBs
   strcpy(insert_base,"SELECT DISTINCT USB_serial FROM ");
   sprintf(query_string,"%s%s WHERE HV != -999 ORDER BY USB_serial;",insert_base,config_table);
@@ -1390,7 +1397,7 @@ bool read_summary_table() {
     }
   }
 
-  ////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Load the offsets for these boards
   strcpy(insert_base,"SELECT USB_serial, board_number, offset FROM ");
   sprintf(query_string,"%s%s;",insert_base,config_table);
@@ -1424,7 +1431,7 @@ bool read_summary_table() {
     OVUSBStream[USBmap[myoffsetsIt->first]].SetOffset(myoffsetsIt->second);
   }
 
-  ////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Count the number of boards in this setup
   strcpy(insert_base,"SELECT DISTINCT pmtboard_u FROM ");
   sprintf(query_string,"%s%s;",insert_base,config_table);
@@ -1463,7 +1470,7 @@ bool read_summary_table() {
     maxcount_16ns_lo[i] = 0;
   }
 
-  ////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Count the number of PMT and Fan-in boards in this setup
   strcpy(insert_base,"SELECT HV, USB_serial, board_number, pmtboard_u FROM ");
   sprintf(query_string,"%s%s;",insert_base,config_table);
@@ -1495,7 +1502,7 @@ bool read_summary_table() {
     PMTUniqueMap[1000*atoi(res[i][1])+atoi(res[i][2])] = atoi(res[i][3]);
   }
 
-  ///////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////
   // Get run summary information
   strcpy(insert_base,"SELECT Run_number,Run_Type,SW_Threshold,SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,stop_time FROM OV_runsummary where Run_number = ");
   sprintf(query_string,"%s'%s' ORDER BY start_time DESC;",insert_base,RunNumber.c_str());
@@ -1523,7 +1530,7 @@ bool read_summary_table() {
   //  printf("res[0][%d]: %s\n",i,res[0][i].c_str());
   //}
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set the Data Folder and Ouput Dir
   //if(res[0][1].c_str() != OVRunType) {
   if(OVRunType.compare(res[0][1].c_str()) != 0) {
@@ -1574,7 +1581,7 @@ bool read_summary_table() {
     return false;
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
   vector<string> initial_files;
   string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary/";
@@ -1607,7 +1614,7 @@ bool read_summary_table() {
   //gaibu_msg(MNOTICE, gaibu_debug_msg);
   printf("OV EBuilder Run Mode: %d\n",EBRunMode);
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Sanity check for each run mode
   if(EBRunMode == kReprocess) { // Check if original run already used these parameters. No reprocess.
     if(atoi(res[0][2]) == Threshold && (TriggerMode)atoi(res[0][3]) == EBTrigMode) {
@@ -1634,7 +1641,7 @@ bool read_summary_table() {
 
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Get EBuilder parameters from MySQL database
   if(EBRunMode != kReprocess) {
     if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) { // Sanity check
@@ -1659,7 +1666,7 @@ bool read_summary_table() {
 
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Connect to EBuilder MySQL table
   if(EBRunMode == kReprocess) {
 
@@ -1721,7 +1728,7 @@ bool read_summary_table() {
       gaibu_msg(MWARNING, gaibu_debug_msg);
       printf("Same reprocessing configuration found for run %s at %s. Deleting...\n",RunNumber.c_str(),Path.c_str());
 
-      //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       // Clean up old directory
       vector<string> old_files;
       string tempfile;
@@ -1782,11 +1789,11 @@ bool read_summary_table() {
         return false;
       }
       //OutputFolder = Path;
-      //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     } // if(res3.num_rows() > 0) {
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Create folder based on parameters
     sprintf(tempfolder,"%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
             OutputDir.c_str(),RunNumber.c_str(),(int)EBTrigMode,Threshold,Res1,Res2);
@@ -1806,7 +1813,7 @@ bool read_summary_table() {
       }
 
     }
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   } //  if(EBRunMode == kReprocess)
   if(!Repeat) {
     if(write_ebsummary() == false) {return false; }
@@ -1814,7 +1821,7 @@ bool read_summary_table() {
 
   if(EBRunMode != kNormal) {
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Move some decoded OV binary files for processing
     int rn,rn_error;
     //int tot_file_count,max_count
@@ -1842,7 +1849,7 @@ bool read_summary_table() {
     //  cout << "File " << i << ": " << initial_files[i] << endl;
     //}
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Determine files to rename
     vector<std::string>::iterator fname_begin=initial_files.begin();
     std::string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
@@ -1889,7 +1896,7 @@ bool read_summary_table() {
       }
     }
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Rename files
     for(int i = 0; i<(int)files_to_rename.size(); i++) {
       rn = 0;
@@ -1936,8 +1943,8 @@ bool read_summary_table() {
   return true;
 }
 
-bool write_summary_table(long int lasttime, int subrun) {
-
+bool write_summary_table(long int lasttime, int subrun)
+{
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
@@ -1966,8 +1973,8 @@ bool write_summary_table(long int lasttime, int subrun) {
   return true;
 }
 
-bool read_stop_time() {
-
+bool read_stop_time()
+{
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
@@ -2014,7 +2021,8 @@ bool read_stop_time() {
   return true;
 }
 
-bool write_endofrun_block(std::string myfname, int data_fd) {
+bool write_endofrun_block(std::string myfname, int data_fd)
+{
   std::cout << "Trying to write end of run block" << std::endl;
   if(EBRunMode == kRecovery || SubRunCounter % timestampsperoutput == 0) {
     data_fd = open_file(myfname);
@@ -2048,8 +2056,8 @@ bool write_endofrun_block(std::string myfname, int data_fd) {
   return true;
 }
 
-bool write_ebsummary() {
-
+bool write_ebsummary()
+{
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
@@ -2092,8 +2100,8 @@ bool write_ebsummary() {
   return true;
 }
 
-bool write_ebretval(int val) {
-
+bool write_ebretval(int val)
+{
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 

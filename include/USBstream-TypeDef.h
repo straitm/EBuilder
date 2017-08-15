@@ -1,7 +1,7 @@
 #ifndef __USBStreamTypeDef__
 #define __USBStreamTypeDef__
 
-#include<vector>
+#include <vector>
 
 typedef std::vector<int> DataPacket;
 typedef std::vector<std::vector<int> > DataVector;
