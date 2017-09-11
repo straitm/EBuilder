@@ -285,7 +285,8 @@ bool USBstream::decode()
     if(fsize==bytesleft) //exit the loop after last read
       break;
   }
-  //extra.push_back(data); // Uncommenting these 2 lines assumes OVDAQ only writes complete packets to disk at start/end of files
+  //extra.push_back(data); // Uncommenting these 2 lines assumes OVDAQ only
+                           // writes complete packets to disk at start/end of files
   //flush_extra();         // For now this is not true;
 
   //std::cout << "File manipulations\n";  std::cout << "Closing files\n";

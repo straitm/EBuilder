@@ -37,21 +37,21 @@ long int *maxcount_16ns_hi; // Keeps track of max clock count for sync overflows
 bool finished=false; // Flag for joiner thread
 bool sem_inc_success; // Flag for dynamic semaphore adjustment
 
-vector<std::string> files; // vector to hold file names
+vector<string> files; // vector to hold file names
 map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
 map<int,int> Datamap; // Maps numerical ordering of non-Fan-in USBs to all numerical ordering of all USBs
 map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number to pmtboard_u in MySQL table
-std::map<int,int*> myoffsets; // Map to hold offsets for each PMT board
+map<int,int*> myoffsets; // Map to hold offsets for each PMT board
 
-//std::string DataFolder = "/snap/data1/OVDAQ/DATA"; // Path to data hard-coded
-std::string DataFolder; // = "OVDAQ/DATA"; // Path to data hard-coded
-std::string OutputDir;
-std::string OutputFolder; // = "/data1/OVDAQ/DATA/"; // Default output data path hard-coded
-std::string ReprocessFolder; // = "/data1/OVDAQ/REP/"; // Default reprocess folder path hard-coded
-std::string sname = "/var/tmp/OV_EBuilder.txt"; // Default ftok semaphore file name
-std::string RunNumber = "";
-std::string OVRunType = "P";
-std::string OVDAQHost = "dcfovdaq";
+//string DataFolder = "/snap/data1/OVDAQ/DATA"; // Path to data hard-coded
+string DataFolder; // = "OVDAQ/DATA"; // Path to data hard-coded
+string OutputDir;
+string OutputFolder; // = "/data1/OVDAQ/DATA/"; // Default output data path hard-coded
+string ReprocessFolder; // = "/data1/OVDAQ/REP/"; // Default reprocess folder path hard-coded
+string sname = "/var/tmp/OV_EBuilder.txt"; // Default ftok semaphore file name
+string RunNumber = "";
+string OVRunType = "P";
+string OVDAQHost = "dcfovdaq";
 long int lastunixtimestamp[maxModules] = {0};
 long int EBcomment = 0;
 int SubRunCounter = 0;
@@ -83,13 +83,13 @@ TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
 void *handle(void *ptr); // This defines a thread to decode files
 void *joiner(void *ptr); // This thread joins the above threads
-int LoadAll(std::string dir); // Loads files
-bool LoadRun(std::string &mydatadir,std::string outdir); // Loads files
-void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int mydataFile); // Builds events
-int open_file(std::string name);
+int LoadAll(string dir); // Loads files
+bool LoadRun(string &mydatadir,string outdir); // Loads files
+void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int mydataFile); // Builds events
+int open_file(string name);
 int check_options(int argc, char **argv);
 void start_gaibu();
-int check_disk_space(std::string dir);
+int check_disk_space(string dir);
 void check_status();
 bool GetBaselines();
 void CalculatePedestal(DataVector* BaselineData, int **baseptr);
@@ -97,7 +97,7 @@ bool WriteBaselineTable(int **baseptr, int usb);
 bool read_summary_table();
 bool write_summary_table(long int lastutc, int subrunnumber);
 bool read_stop_time();
-bool write_endofrun_block(std::string file, int fd);
+bool write_endofrun_block(string file, int fd);
 bool write_ebsummary();
 bool write_ebretval(int val);
 
@@ -114,19 +114,19 @@ int main(int argc, char **argv)
   if(r < 0) { write_ebretval(-1); return -1; }
 
   DataVector ExtraDataVector; // DataVector carries over events from last time stamp
-  std::vector<int> ExtraIndexVector;
+  vector<int> ExtraIndexVector;
   DataVector CurrentDataVector[maxUSB]; // Array of DataVectors for current timestamp to process
   DataVectorIt CurrentDataVectorIt[maxUSB]; // Array of iterators for current DataVectors
   DataVector MinDataVector; // DataVector of current minimum data packets
   DataPacket MinDataPacket; // Minimum and Last Data Packets added
-  std::vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
+  vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int MinIndex; // index of minimum event added to USB stream
   int sem_id = 0; // output file DOGSifier synchronization semaphore
   int dataFile = 0; // output file descriptor
-  std::string fname; // output file name
-  std::string iname; // input file name
+  string fname; // output file name
+  string iname; // input file name
   time_t timeout;
-  std::string tempfilename;
+  string tempfilename;
   int EventCounter = 0;
   bool first_time = true;
   int status = 0;
@@ -256,9 +256,13 @@ int main(int argc, char **argv)
               }
               //while(write_ebsummary() == false) { sleep(1); } // timeout?
               if((int)difftime(time(0),timeout) > MAXTIME) {
-                sprintf(gaibu_debug_msg,"No data found for %d seconds!  Closing run %s without finding stop time on MySQL",MAXTIME, RunNumber.c_str());
+                sprintf(gaibu_debug_msg,"No data found for %d seconds!  "
+                  "Closing run %s without finding stop time on MySQL",
+                   MAXTIME, RunNumber.c_str());
                 gaibu_msg(MERROR,gaibu_debug_msg,RunNumber);
-                printf("No data found for %d seconds!  Closing run %s without finding stop time on MySQL\n",MAXTIME, RunNumber.c_str());
+                printf("No data found for %d seconds!  "
+                  "Closing run %s without finding stop time on MySQL\n",
+                  MAXTIME, RunNumber.c_str());
               } else {
                 sprintf(gaibu_debug_msg,"OV Event Builder has finished processing run %s",RunNumber.c_str());
                 //gaibu_msg(MNOTICE,gaibu_debug_msg,RunNumber);
@@ -404,7 +408,8 @@ int main(int argc, char **argv)
       } // End of for loop: MinDataPacket has been filled appropriately
 
       if(MinDataVector.size() > 0) { // Check for equal events
-        if( LessThan(MinDataVector.back(), MinDataPacket,3) ) { // Ignore gaps which have consist of fewer than 4 clock cycles
+        if( LessThan(MinDataVector.back(), MinDataPacket,3) ) {
+          // Ignore gaps which have consist of fewer than 4 clock cycles
 
           ++EventCounter;
           BuildEvent(&MinDataVector, &MinIndexVector, dataFile);
@@ -525,7 +530,7 @@ void *joiner(void *ptr) // This thread joins the above threads
 }
 
 // opens output data file
-int open_file(std::string name)
+int open_file(string name)
 {
   int temp_dataFile = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
   //cout << "File Name: "<< name <<endl;
@@ -542,7 +547,7 @@ int open_file(std::string name)
   return temp_dataFile;
 }
 
-int check_disk_space(std::string dir)
+int check_disk_space(string dir)
 {
   struct statvfs fiData;
   int free_space_percent;
@@ -558,7 +563,8 @@ int check_disk_space(std::string dir)
       free_space_percent = (int)(100*(double)fiData.f_bfree/(double)fiData.f_blocks);
       //cout << "Free space: " << free_space_percent << "%\n";
       if(free_space_percent < 3) {
-        sprintf(gaibu_debug_msg,"Error: Can't write to disk: Found disk >97 percent full: statvfs called on %s",dir.c_str());
+        sprintf(gaibu_debug_msg,"Error: Can't write to disk: Found disk "
+          ">97 percent full: statvfs called on %s",dir.c_str());
         gaibu_msg(MERROR, gaibu_debug_msg);
         return -1;
       }
@@ -612,7 +618,7 @@ void check_status()
 }
 
 // Just check that it exists
-bool LoadRun(std::string &datadir, std::string outdatadir)
+bool LoadRun(string &datadir, string outdatadir)
 {
   datadir = DataFolder + "/Run_" + RunNumber + "/binary";
 
@@ -636,7 +642,7 @@ bool LoadRun(std::string &datadir, std::string outdatadir)
   sort(files.begin(),files.end());
   //fname_begin = files.begin();
 
-  std::string TempProcessedOutput = OutputFolder + "/processed";
+  string TempProcessedOutput = OutputFolder + "/processed";
   umask(0);
   if(mkdir(OutputFolder.c_str(), 0777)) { //O_CREAT??
     if(EBRunMode != kRecovery) {
@@ -671,7 +677,7 @@ bool LoadRun(std::string &datadir, std::string outdatadir)
 }
 
 // This function checks to see if files are ready to be processed
-int LoadAll(std::string dir)
+int LoadAll(string dir)
 {
 
   int r = check_disk_space(dir);
@@ -695,13 +701,13 @@ int LoadAll(std::string dir)
 
   sort(files.begin(),files.end()); // FixME: Is it safe to avoid this every time?
 
-  vector<std::string>::iterator fname_begin=files.begin();
+  vector<string>::iterator fname_begin=files.begin();
 
   check_status(); // Performance monitor
 
-  std::string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx
+  string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx
   size_t fname_it_delim;
-  std::string ftime_min;
+  string ftime_min;
   if(fname_begin->find(fdelim) == fname_begin->npos) {
     sprintf(gaibu_debug_msg,"Fatal Error: Cannot find '_' in input file name");
     gaibu_msg(MEXCEPTION, gaibu_debug_msg,RunNumber);
@@ -711,8 +717,8 @@ int LoadAll(std::string dir)
 
   fname_it_delim = fname_begin->find(fdelim);
   //fname_begin = fname_curr; //files.begin();
-  std::string temp3;
-  std::string fusb;
+  string temp3;
+  string fusb;
   char *pEnd;
   for(int k = 0; k<numUSB; k++) {
     for(int j = k; j<(int)files.size(); j++) {
@@ -736,7 +742,7 @@ int LoadAll(std::string dir)
   fname_begin = files.begin();
 
   int status = 0;
-  std::string base_filename;
+  string base_filename;
   for(int k=0; k<numUSB; k++) {
     fname_it_delim = fname_begin->find(fdelim);
     ftime_min = fname_begin->substr(0,fname_it_delim);
@@ -771,7 +777,7 @@ int LoadAll(std::string dir)
   return 1;
 }
 
-void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int mydataFile)
+void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int mydataFile)
 {
 
   int k, nbs, length, module, type, nwords, module_local, usb;
@@ -782,7 +788,7 @@ void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int
   long int time_16ns_hi = 0;
   long int time_16ns_lo = 0;
   DataVectorIt CurrentOutDataVectorIt = OutDataVector->begin();
-  std::vector<int>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
+  vector<int>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
   OVEventHeader *CurrEventHeader = new OVEventHeader;
   OVDataPacketHeader *CurrDataPacketHeader = new OVDataPacketHeader;
   OVHitData *CurrHit = new OVHitData;
@@ -806,7 +812,7 @@ void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int
       exit(1);
     }
     else {
-      //std::cout << "Size: " << CurrentOutDataVectorIt->size() << std::endl;
+      //cout << "Size: " << CurrentOutDataVectorIt->size() << endl;
     }
 
     if(CurrentOutDataVectorIt == OutDataVector->begin()) { // First packet in built event
@@ -853,9 +859,11 @@ void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int
     }
     else {
       if(ovf[module] == true) {
-        sprintf(gaibu_debug_msg,"Module %d max clock count hi: %ld\tlo: %ld",module,maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
+        sprintf(gaibu_debug_msg,"Module %d max clock count hi: %ld\tlo: "
+          "%ld",module,maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
         gaibu_msg(MWARNING, gaibu_debug_msg);
-        printf(gaibu_debug_msg,"Module %d max clock count hi: %ld\tlo: %ld \n",module,maxcount_16ns_hi[module],maxcount_16ns_lo[module]);
+        printf(gaibu_debug_msg,"Module %d max clock count hi: %ld\tlo: "
+          "%ld \n",module,maxcount_16ns_hi[module],maxcount_16ns_lo[module]);
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
         ovf[module] = false;
@@ -885,9 +893,13 @@ void BuildEvent(DataVector *OutDataVector, std::vector<int> *OutIndexVector, int
           long int expected_time_16ns_sync_offset = *(myoffsets[usb]+module_local);
           //Camillo modification
           if(expected_time_16ns_sync - expected_time_16ns_sync_offset != time_16ns_sync) {
-            sprintf(gaibu_debug_msg,"Trigger box module %d received sync pulse at clock count %ld instead of expected clock count (%ld).",module,time_16ns_sync,expected_time_16ns_sync);
+            sprintf(gaibu_debug_msg,"Trigger box module %d received "
+              "sync pulse at clock count %ld instead of expected clock "
+              "count (%ld).",module,time_16ns_sync,expected_time_16ns_sync);
             gaibu_msg(MERROR, gaibu_debug_msg);
-            printf("Trigger box module %d received sync pulse at clock count %ld instead of expected clock count (%ld).\n",module,time_16ns_sync,expected_time_16ns_sync);
+            printf("Trigger box module %d received sync pulse at clock "
+              "count %ld instead of expected clock count (%ld).\n",
+              module,time_16ns_sync,expected_time_16ns_sync);
           }
         }
 
@@ -1046,10 +1058,10 @@ bool GetBaselines()
 {
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search baseline directory for files and sort them lexigraphically
-  std::string in_dir = DataFolder + "/Run_" + RunNumber + "/binary";
-  //std::string in_dir = DataFolder + "/Run_" + RunNumber + "/baseline";
-  vector<std::string> in_files_tmp;
-  vector<std::string>::iterator in_files_tmp_it;
+  string in_dir = DataFolder + "/Run_" + RunNumber + "/binary";
+  //string in_dir = DataFolder + "/Run_" + RunNumber + "/baseline";
+  vector<string> in_files_tmp;
+  vector<string>::iterator in_files_tmp_it;
   if(GetDir(in_dir, in_files_tmp, 0, 1)) { // Get baselines too
     if(errno) {
       sprintf(gaibu_debug_msg,"Fatal Error(%d) opening binary directory %s for baselines",errno,in_dir.c_str());
@@ -1063,7 +1075,7 @@ bool GetBaselines()
   }
 
   // Preparing for baseline shift
-  vector<std::string> in_files;
+  vector<string> in_files;
   for(in_files_tmp_it = in_files_tmp.begin(); in_files_tmp_it != in_files_tmp.end(); in_files_tmp_it++) {
     if(in_files_tmp_it->find("baseline") != in_files_tmp_it->npos) {
       in_files.push_back(*in_files_tmp_it);
@@ -1075,16 +1087,19 @@ bool GetBaselines()
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Sanity check on number of baseline files
   if((int)in_files.size() != numUSB-numFanUSB) {
-    sprintf(gaibu_debug_msg,"Fatal Error: Baseline file count (%lu) != numUSB (%d) in directory %s", (long int)in_files.size(), numUSB, in_dir.c_str());
+    sprintf(gaibu_debug_msg,"Fatal Error: Baseline file count (%lu) != "
+      "numUSB (%d) in directory %s", (long int)in_files.size(), numUSB,
+       in_dir.c_str());
     gaibu_msg(MERROR, gaibu_debug_msg);
-    printf("Fatal Error: Baseline file count (%lu) != numUSB (%d) in directory %s\n", (long int)in_files.size(), numUSB, in_dir.c_str());
+    printf("Fatal Error: Baseline file count (%lu) != numUSB (%d) in "
+      "directory %s\n", (long int)in_files.size(), numUSB, in_dir.c_str());
     return false;
   }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set USB numbers for each OVUSBStream and load baseline files
-  vector<std::string>::iterator in_files_it=in_files.begin();
-  std::string fusb;
+  vector<string>::iterator in_files_it=in_files.begin();
+  string fusb;
   long int iusb;
   char *pEnd;
   for(int i = 0; i<numUSB-numFanUSB; i++) {
@@ -1195,12 +1210,14 @@ void CalculatePedestal(DataVector* BaselineData, int **baseptr)
         charge = BaselineDataIt->at(i);
         channel = BaselineDataIt->at(i+1); // Channels run 0-63
         if(channel >= numChannels) {
-          sprintf(gaibu_debug_msg,"Fatal Error: Channel number requested (%d) out of range in calculate pedestal",channel);
+          sprintf(gaibu_debug_msg,"Fatal Error: Channel number requested "
+            "(%d) out of range in calculate pedestal",channel);
           gaibu_msg(MERROR, gaibu_debug_msg);
           printf("Fatal Error: Channel number requested (%d) out of range in calculate pedestal\n",channel);
         }
         // Should these be modified to better handle large numbers of baseline triggers?
-        baseline[module][channel] = (baseline[module][channel]*counter[module][channel] + charge)/(counter[module][channel]+1);
+        baseline[module][channel] = (baseline[module][channel]*
+          counter[module][channel] + charge)/(counter[module][channel]+1);
         counter[module][channel] = counter[module][channel] + 1;
       }
     }
@@ -1242,7 +1259,7 @@ bool WriteBaselineTable(int **baseptr, int usb)
   char mybuff[BUFSIZE];
   sprintf(mydate,"%.4d-%.2d-%.2d",1900+timeinfo->tm_year,(1+timeinfo->tm_mon),timeinfo->tm_mday);
   sprintf(mytime,"%.2d:%.2d:%.2d",timeinfo->tm_hour,timeinfo->tm_min,timeinfo->tm_sec);
-  std::string baseline_values = "";
+  string baseline_values = "";
 
   for(int i = 0; i < maxModules; i++) {
     baseline_values = "";
@@ -1323,7 +1340,8 @@ bool read_summary_table()
     return false;
   }
   else if(res.num_rows() > 1) {
-    sprintf(gaibu_debug_msg,"Found more than one entry for run %s in OV_runsummary. Using most recent entry.",RunNumber.c_str());
+    sprintf(gaibu_debug_msg,"Found more than one entry for run %s "
+      "in OV_runsummary. Using most recent entry.",RunNumber.c_str());
     gaibu_msg(MWARNING, gaibu_debug_msg);
     printf("Found more than one entry for run %s in OV_runsummary. Using most recent entry\n",RunNumber.c_str());
   }
@@ -1416,7 +1434,7 @@ bool read_summary_table()
     printf("Found time offsets for online table %s\n",config_table);
   }
   // Create map of UBS_serial to array of pmt board offsets
-  //std::map<int,int*> myoffsets;
+  //map<int,int*> myoffsets;
   for(int i = 0; i<(int)res.num_rows(); i++) {
     //printf("USB_serial: %d\tpmtboard: %d\toffset: %d\n",atoi(res[i][0]),atoi(res[i][1]),atoi(res[i][2]));
     if(!myoffsets.count(atoi(res[i][0]))) {
@@ -1426,7 +1444,7 @@ bool read_summary_table()
       *(myoffsets[atoi(res[i][0])]+atoi(res[i][1])) = atoi(res[i][2]);
     }
   }
-  std::map<int,int*>::iterator myoffsetsIt; // USB to array of PMT offsets
+  map<int,int*>::iterator myoffsetsIt; // USB to array of PMT offsets
   for(myoffsetsIt = myoffsets.begin(); myoffsetsIt != myoffsets.end(); myoffsetsIt++) {
     OVUSBStream[USBmap[myoffsetsIt->first]].SetOffset(myoffsetsIt->second);
   }
@@ -1504,7 +1522,9 @@ bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
-  strcpy(insert_base,"SELECT Run_number,Run_Type,SW_Threshold,SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,stop_time FROM OV_runsummary where Run_number = ");
+  strcpy(insert_base,"SELECT Run_number,Run_Type,SW_Threshold,"
+    "SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,"
+    "stop_time FROM OV_runsummary where Run_number = ");
   sprintf(query_string,"%s'%s' ORDER BY start_time DESC;",insert_base,RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
@@ -1516,7 +1536,8 @@ bool read_summary_table()
     return false;
   }
   else if(res.num_rows() > 1) { // Check that OVRunType is the same?
-    sprintf(gaibu_debug_msg,"Found more than one entry for run %s in OV_runsummary. Using most recent entry",RunNumber.c_str());
+    sprintf(gaibu_debug_msg,"Found more than one entry for run %s in "
+      "OV_runsummary. Using most recent entry",RunNumber.c_str());
     gaibu_msg(MWARNING, gaibu_debug_msg);
     printf("Found more than one entry for run %s in OV_runsummary. Using most recent entry\n",RunNumber.c_str());
   }
@@ -1618,8 +1639,9 @@ bool read_summary_table()
   // Sanity check for each run mode
   if(EBRunMode == kReprocess) { // Check if original run already used these parameters. No reprocess.
     if(atoi(res[0][2]) == Threshold && (TriggerMode)atoi(res[0][3]) == EBTrigMode) {
-      sprintf(gaibu_debug_msg,"MySQL running parameters match reprocessing parameters. Threshold: %04d\tTrigger type: %01d",
-              Threshold, (int)EBTrigMode);
+      sprintf(gaibu_debug_msg,"MySQL running parameters match "
+        "reprocessing parameters. Threshold: %04d\tTrigger type: %01d",
+        Threshold, (int)EBTrigMode);
       gaibu_msg(MERROR, gaibu_debug_msg);
       printf("MySQL running parameters match Reprocessing parameters. Threshold: %04d\tTrigger type: %01d\n",
              Threshold, (int)EBTrigMode);
@@ -1629,8 +1651,9 @@ bool read_summary_table()
   }
   else if(EBRunMode == kRecovery) { // Check consistency of run parameters
     if(res[0][1].c_str() != OVRunType || atoi(res[0][2]) != Threshold || atoi(res[0][3]) != (int)EBTrigMode) {
-      sprintf(gaibu_debug_msg,"MySQL parameters do not match recovery parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d",
-              OVRunType.c_str(),Threshold, (int)EBTrigMode);
+      sprintf(gaibu_debug_msg,"MySQL parameters do not match recovery "
+        "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d",
+        OVRunType.c_str(),Threshold, (int)EBTrigMode);
       gaibu_msg(MERROR, gaibu_debug_msg);
       printf("MySQL parameters do not match recovery parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d\n",
              OVRunType.c_str(),Threshold, (int)EBTrigMode);
@@ -1652,7 +1675,8 @@ bool read_summary_table()
       return false;
     }
     if(EBTrigMode != (TriggerMode)atoi(res[0][3])) {
-      sprintf(gaibu_debug_msg,"Trigger Mode requested (%d) will override MySQL setting (%d)",(int)EBTrigMode,atoi(res[0][3]));
+      sprintf(gaibu_debug_msg,"Trigger Mode requested (%d) will "
+        "override MySQL setting (%d)",(int)EBTrigMode,atoi(res[0][3]));
       gaibu_msg(MWARNING, gaibu_debug_msg);
       printf("Trigger Mode requested (%d) will override MySQL setting (%d)",(int)EBTrigMode,atoi(res[0][3]));
     }
@@ -1713,7 +1737,9 @@ bool read_summary_table()
     char insert_base2[BUFSIZE] = "SELECT Path,ENTRY FROM OV_ebuilder WHERE ";
     string Path = "";
 
-    sprintf(query_string,"%s Run_number = '%s' and SW_Threshold = '%04d' and SW_TriggerMode = '%01d' and Res1 = '%02d' and Res2 = '%02d' ORDER BY ENTRY;",
+    sprintf(query_string,"%s Run_number = '%s' and SW_Threshold = "
+      "'%04d' and SW_TriggerMode = '%01d' and Res1 = '%02d' and Res2 "
+      "= '%02d' ORDER BY ENTRY;",
             insert_base2,RunNumber.c_str(),Threshold,(int)EBTrigMode, Res1, Res2);
     printf("query: %s\n",query_string);
     //mysqlpp::Query query = myconn.query(query_string);
@@ -1851,9 +1877,9 @@ bool read_summary_table()
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Determine files to rename
-    vector<std::string>::iterator fname_begin=initial_files.begin();
-    std::string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
-    //std::string ftime_min;
+    vector<string>::iterator fname_begin=initial_files.begin();
+    string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
+    //string ftime_min;
     if(fname_begin->find(fdelim) == fname_begin->npos) {
       sprintf(gaibu_debug_msg,"Error: Cannot find '_' in file name");
       gaibu_msg(MWARNING, gaibu_debug_msg);
@@ -1865,7 +1891,7 @@ bool read_summary_table()
 
     vector<string> myfiles[maxUSB];
     map<int,int> mymap;
-    std::string fusb;
+    string fusb;
     char *pEnd;
     int iusb, mapindex;
     mapindex = 0;
@@ -1959,7 +1985,8 @@ bool write_summary_table(long int lasttime, int subrun)
   char insert_base[BUFSIZE] = "UPDATE OV_runsummary SET EBcomment = ";
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"%s'%ld', EBsubrunnumber = '%d' WHERE Run_number = '%s';",insert_base,lasttime,subrun,RunNumber.c_str());
+  sprintf(query_string,"%s'%ld', EBsubrunnumber = '%d' WHERE Run_number "
+    "= '%s';",insert_base,lasttime,subrun,RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   if(query.execute()==false) {
     sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query.error());
@@ -2002,12 +2029,13 @@ bool read_stop_time()
   }
   /*
   else if(res.num_rows() > 1) {
-    sprintf(gaibu_debug_msg,"Found more than one entry for run %s in OV_runsummary. Using most recent entry.",RunNumber.c_str());
+    sprintf(gaibu_debug_msg,"Found more than one entry for run %s in "
+      "OV_runsummary. Using most recent entry.",RunNumber.c_str());
     gaibu_msg(MWARNING, gaibu_debug_msg);
     printf("Found more than one entry for run %s in OV_runsummary. Using most recent entry\n",RunNumber.c_str());
   }
   */
-  std::cout << "res[0][0]: " << res[0][0].c_str() << std::endl;
+  cout << "res[0][0]: " << res[0][0].c_str() << endl;
   if(res[0][0].is_null()) {
     myconn.disconnect();
     return false;
@@ -2021,15 +2049,17 @@ bool read_stop_time()
   return true;
 }
 
-bool write_endofrun_block(std::string myfname, int data_fd)
+bool write_endofrun_block(string myfname, int data_fd)
 {
-  std::cout << "Trying to write end of run block" << std::endl;
+  cout << "Trying to write end of run block" << endl;
   if(EBRunMode == kRecovery || SubRunCounter % timestampsperoutput == 0) {
     data_fd = open_file(myfname);
     if(data_fd <= 0) {
-      sprintf(gaibu_debug_msg,"Cannot open file %s to write end-of-run block for run %s",myfname.c_str(),RunNumber.c_str());
+      sprintf(gaibu_debug_msg,"Cannot open file %s to write "
+        "end-of-run block for run %s",myfname.c_str(),RunNumber.c_str());
       gaibu_msg(MERROR, gaibu_debug_msg);
-      sprintf(gaibu_debug_msg,"Cannot open file %s to write end-of-run block for run %s\n",myfname.c_str(),RunNumber.c_str());
+      sprintf(gaibu_debug_msg,"Cannot open file %s to write "
+        "end-of-run block for run %s\n",myfname.c_str(),RunNumber.c_str());
       return false;
     }
   }
@@ -2073,8 +2103,9 @@ bool write_ebsummary()
   char query_string[BUFSIZE];
   //string Path = "";
 
-  sprintf(query_string,"%s Run_number = '%s', SW_Threshold = '%04d', SW_TriggerMode = '%01d', Res1 = '%02d', Res2 = '%02d';",
-          insert_base,RunNumber.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
+  sprintf(query_string,"%s Run_number = '%s', SW_Threshold = '%04d', "
+    "SW_TriggerMode = '%01d', Res1 = '%02d', Res2 = '%02d';",
+    insert_base,RunNumber.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
 
@@ -2115,7 +2146,6 @@ bool write_ebretval(int val)
 
   char insert_base[BUFSIZE] = "SELECT Run_number FROM OV_runsummary WHERE ";
   char query_string[BUFSIZE];
-  //string Path = "";
 
   sprintf(query_string,"%s Run_number = '%s';",
           insert_base,RunNumber.c_str());
