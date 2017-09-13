@@ -1,3 +1,8 @@
+Original README for the Double Chooz Outer Veto Event Builder follows.
+It's not all right anymore.
+
+========================================================================
+
 M. Toups
 Created: 9/10/09
 Updated: 11/24/09

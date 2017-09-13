@@ -13,7 +13,7 @@ ROOTLIBS     := $(shell root-config --libs)
 
 PREFIX=/home/strait
 
-CXXFLAGS      = -O2 -Wall -fPIC $(INC) \
+CXXFLAGS      = -O2 -Wunused -Wall -Wextra -fPIC $(INC) \
                 -I/usr/include/mysql -I$(PREFIX)/include/mysql++
 LDFLAGS       = $(INC) # does nothing?
 SOFLAGS       = -shared
@@ -61,7 +61,4 @@ $(TMPDIR)/%.o: $(SRCDIR)/%.cxx \
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 dir:
-	@echo '<< Creating OV EBuilder directory structure >>'
 	@mkdir -p $(BINDIR) $(TMPDIR)
-	@touch /var/tmp/OV_EBuilder.txt
-	@echo '<< Creating OV EBuilder directory structure succeeded >>'

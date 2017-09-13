@@ -5,22 +5,9 @@
 #include <USBstreamUtils.h>
 
 #include "TObject.h"
-#include "Rtypes.h"
-#include <vector>
 #include <fstream>
 #include <deque>
 #include <sys/stat.h>
-#include <string.h>
-#include <map>
-// DOGSifier header files needed for semaphore:
-#include <stdio.h>
-#include <cstdlib>
-#include <sys/ipc.h>   /* general SysV IPC structures         */
-#include <sys/sem.h>   /* semaphore functions and structs.    */
-#include <exception>
-#include "sem_tools.hh"
-
-//_____________________________________________________
 
 class USBstream {
 
@@ -29,11 +16,9 @@ public:
   USBstream();
   virtual ~USBstream();
 
-  //void SetBothLayerThresh(bool thresh) { BothLayerThresh = thresh; }
   void SetUSB(int usb) { myusb=usb; }
   void SetThresh(int thresh, int threshtype);
   void SetIsFanUSB() { IsFanUSB = true; }
-  //void SetTOLSP(unsigned long int tolsp) { mytolsp=tolsp; }
   void SetTOLUTC(unsigned long int tolutc) { mytolutc=tolutc; }
   void SetOffset(int *off);
   void SetBaseline(int **base);
@@ -44,8 +29,6 @@ public:
   bool GetIsFanUSB() { return IsFanUSB; }
   int GetNPMT() const { return mynpmt; }
   char* GetFileName() { return myfilename; }
-  //int GetOFFSET(int off) const;
-  //unsigned long int GetTOLSP() const { return mytolsp; }
   unsigned long int GetTOLUTC() const { return mytolutc; }
 
   bool GetNextTimeStamp(DataVector *vec);
@@ -58,8 +41,6 @@ private:
   int mythresh;
   int myusb;
   int mynpmt;
-  //int *myoffset;
-  //int *mypmt;
   int baseline[64][64]; // Data structure?
   int offset[64];
   int adj1[64];
@@ -69,7 +50,7 @@ private:
   float avglength;
   unsigned long int mytolsp;
   unsigned long int mytolutc;
-  char myfilename[100];
+  char myfilename[100]; // XXX looks dangerous
   fstream *myFile;
   bool IsOpen;
   bool IsFanUSB;
@@ -101,8 +82,6 @@ private:
   struct stat fileinfo;
   int bytesleft;
   int fsize;
-
-  //ClassDef(USBstream,0)
 };
 
 class OVHitData {
@@ -140,11 +119,11 @@ public:
 protected:
 
   char fNOVDataPackets;
-  long int fTimeSec; //unsigned int fTimeSecHigh;
+  long int fTimeSec;
 
 };
 
-class OVDataPacketHeader { // : public OVHeader {
+class OVDataPacketHeader {
 
 public:
 
@@ -168,6 +147,5 @@ private:
   short int fModule;
   long int fTime16ns;
 };
-
 
 #endif
