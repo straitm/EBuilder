@@ -18,7 +18,7 @@
 #include <sys/ipc.h>   /* general SysV IPC structures         */
 #include <sys/sem.h>   /* semaphore functions and structs.    */
 #include <exception>
-#include <sem_tools.hh>
+#include "sem_tools.hh"
 
 //_____________________________________________________
 

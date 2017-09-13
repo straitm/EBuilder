@@ -4,22 +4,24 @@ LD = g++
 SRCDIR  = ./src
 BINDIR  = ./bin
 TMPDIR  = ./tmp
-INCDIR =  $(DCONLINE_PATH)/DCOV/EBuilder/include
-INC =  -I$(DCONLINE_PATH)/DCOV/EBuilder/include
-INC += -I$(DCONLINE_PATH)/DCDOGSifier
+INCDIR =  ./include
+INC =  -I./include
 
 ROOTCFLAGS   := $(shell root-config --cflags)
 ROOTLDFLAGS  := $(shell root-config --ldflags)
 ROOTLIBS     := $(shell root-config --libs)
 
-CXXFLAGS      = -O2 -Wall -fPIC $(INC) -I/usr/include/mysql -I/usr/include/mysql++
+PREFIX=/home/strait
+
+CXXFLAGS      = -O2 -Wall -fPIC $(INC) \
+                -I/usr/include/mysql -I$(PREFIX)/include/mysql++
 LDFLAGS       = $(INC) # does nothing?
 SOFLAGS       = -shared
 
 CXXFLAGS     += $(ROOTCFLAGS)
 LDFLAGS      += $(ROOTLDFLAGS)
 LIBS          = $(ROOTLIBS)
-LIBS         += -L/usr/lib/mysql -lmysqlclient -lmysqlpp
+LIBS         += -L/usr/lib64/mysql -L$(PREFIX)/lib -lmysqlclient -lmysqlpp
 MAIN=EventBuilder.cxx
 TARGET=$(MAIN:%.cxx=$(BINDIR)/%)
 
@@ -52,12 +54,14 @@ $(TARGET): $(USBSTREAMSO) $(EVENTBUILDERO)
 clean:
 	@rm -rf $(BINDIR) $(TMPDIR) core $(SRCDIR)/*Dict*
 
-$(TMPDIR)/%.o: $(SRCDIR)/%.cxx $(INCDIR)/USBstream.h $(INCDIR)/USBstream-TypeDef.h $(INCDIR)/USBstreamUtils.h
-	$(CXX)  $(CXXFLAGS) -c $< -o $@
+$(TMPDIR)/%.o: $(SRCDIR)/%.cxx \
+               $(INCDIR)/USBstream.h \
+               $(INCDIR)/USBstream-TypeDef.h \
+               $(INCDIR)/USBstreamUtils.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 dir:
 	@echo '<< Creating OV EBuilder directory structure >>'
 	@mkdir -p $(BINDIR) $(TMPDIR)
-	# Why?
 	@touch /var/tmp/OV_EBuilder.txt
 	@echo '<< Creating OV EBuilder directory structure succeeded >>'
