@@ -1,1 +1,4 @@
 *.swp
+bin/EventBuilder
+*.o
+*.so
