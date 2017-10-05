@@ -38,12 +38,11 @@ static long int *maxcount_16ns_hi; // for sync overflows for all boards
 static bool finished=false; // Flag for joiner thread
 
 static vector<string> files; // vector to hold file names
-static map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
 static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
                              // USBs to all numerical ordering of all USBs
 static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                   // to pmtboard_u in MySQL table
-static map<int,int*> myoffsets; // Map to hold offsets for each PMT board
+static map<int,int*> pmtoffsets; // Map to hold offsets for each PMT board
 
 static string DataFolder; // Path to data hard-coded
 static string OutputFolder; // Default output data path hard-coded
@@ -60,12 +59,8 @@ static int Res2 = 0;
 static bool Repeat = false;
 static int initial_delay = 0;
 static int OV_EB_State = 0;
-static int Ddelay = 0;
 static int numUSB = 0;
 static int numFanUSB = 0;
-static int totalboards = 0;
-static int totalPMTboards = 0;
-static int totalFanboards = 0;
 static char server[BUFSIZE] = {0};
 static char username[BUFSIZE] = {0};
 static char password[BUFSIZE] = {0};
@@ -190,6 +185,7 @@ static int check_disk_space(string dir)
 // FixME: To be optimized (Was never done for Double Chooz.  Is it inefficient?)
 static void check_status()
 {
+  static int Ddelay = 0;
   // Performance monitor
   cout << "Found " << files.size() << " files." << endl;
   int f_delay = (int)(latency*files.size()/numUSB/20);
@@ -202,7 +198,7 @@ static void check_status()
       else { // OV EBuilder was already behind
         Ddelay = f_delay - initial_delay;
         if(Ddelay % 3 == 0) { // Every minute of delay
-          Ddelay = Ddelay/3;
+          Ddelay /= 3;
           sprintf(gaibu_debug_msg,
                   "Process has accumulated %d min of delay since starting",Ddelay);
           gaibu_msg(MNOTICE, gaibu_debug_msg);
@@ -217,7 +213,7 @@ static void check_status()
       else {
         Ddelay = initial_delay - f_delay;
         if(Ddelay % 3 == 0) { // Every minute of recovery
-          Ddelay = Ddelay/3;
+          Ddelay /= 3;
           sprintf(gaibu_debug_msg,
             "Process has reduced data processing delay by %d min since starting",Ddelay);
           gaibu_msg(MNOTICE, gaibu_debug_msg);
@@ -491,7 +487,7 @@ static void BuildEvent(DataVector *OutDataVector,
         if(length == 32) {
           long int time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
           long int expected_time_16ns_sync = (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
-          long int expected_time_16ns_sync_offset = *(myoffsets[usb]+module_local);
+          long int expected_time_16ns_sync_offset = *(pmtoffsets[usb]+module_local);
           //Camillo modification
           if(expected_time_16ns_sync - expected_time_16ns_sync_offset
              != time_16ns_sync) {
@@ -605,9 +601,8 @@ static int check_options(int argc, char **argv)
     Threshold = 0;
   }
 
-  for (index = optind; index < argc; index++) {
-    printf ("Non-option argument %s\n", argv[index]);
-  }
+  for(index = optind; index < argc; index++)
+    printf("Non-option argument %s\n", argv[index]);
 
   if(show_help) {
     printf("Usage: %s -r <run_number> [-d <data_disk>]\n",argv[0]);
@@ -909,7 +904,7 @@ static bool write_ebsummary()
   return true;
 }
 
-
+// XXX this function is 600 lines long and does not have documented goals/outputs.
 static bool read_summary_table()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
@@ -976,6 +971,8 @@ static bool read_summary_table()
            config_table);
   }
   numUSB = (long int)res.num_rows();
+
+  map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
   for(int i = 0; i<numUSB; i++) {
     USBmap[atoi(res[i][0])]=i;
     OVUSBStream[i].SetUSB(atoi(res[i][0]));
@@ -1015,7 +1012,6 @@ static bool read_summary_table()
       OVUSBStream[USBmapIt->second].SetIsFanUSB();
       sprintf(gaibu_debug_msg,"USB %d identified as Fan-in USB",USBmapIt->first);
       printf("USB %d identified as Fan-in USB\n",USBmapIt->first);
-
     }
   }
 
@@ -1037,17 +1033,16 @@ static bool read_summary_table()
   }
   // Create map of UBS_serial to array of pmt board offsets
   for(int i = 0; i<(int)res.num_rows(); i++) {
-    if(!myoffsets.count(atoi(res[i][0]))) {
-      myoffsets[atoi(res[i][0])] = new int[maxModules];
-    }
-    if(atoi(res[i][1]) < maxModules) {
-      *(myoffsets[atoi(res[i][0])]+atoi(res[i][1])) = atoi(res[i][2]);
-    }
+    if(!pmtoffsets.count(atoi(res[i][0])))
+      pmtoffsets[atoi(res[i][0])] = new int[maxModules];
+    if(atoi(res[i][1]) < maxModules)
+      *(pmtoffsets[atoi(res[i][0])]+atoi(res[i][1])) = atoi(res[i][2]);
   }
-  map<int,int*>::iterator myoffsetsIt; // USB to array of PMT offsets
-  for(myoffsetsIt = myoffsets.begin(); myoffsetsIt != myoffsets.end(); myoffsetsIt++) {
-    OVUSBStream[USBmap[myoffsetsIt->first]].SetOffset(myoffsetsIt->second);
-  }
+  map<int,int*>::iterator pmtoffsetsIt; // USB to array of PMT offsets
+  for(pmtoffsetsIt = pmtoffsets.begin();
+      pmtoffsetsIt != pmtoffsets.end();
+      pmtoffsetsIt++)
+    OVUSBStream[USBmap[pmtoffsetsIt->first]].SetOffset(pmtoffsetsIt->second);
 
   //////////////////////////////////////////////////////////////////////
   // Count the number of boards in this setup
@@ -1067,7 +1062,7 @@ static bool read_summary_table()
     printf("Found %ld distinct PMT boards in table %s\n",(long int)res.num_rows(),
            config_table);
   }
-  totalboards = res.num_rows();
+  const int totalboards = res.num_rows();
 
   // New function establishes overflow array
   int max = 0; int pmtnum;
@@ -1113,8 +1108,6 @@ static bool read_summary_table()
     return false;
   }
   for(int i = 0; i<(int)res.num_rows(); i++) {
-    if(atoi(res[i][0])!=-999) ++totalPMTboards;
-    else ++totalFanboards;
     // This is a temporary internal mapping used only by the EBuilder
     PMTUniqueMap[1000*atoi(res[i][1])+atoi(res[i][2])] = atoi(res[i][3]);
   }
@@ -1168,8 +1161,7 @@ static bool read_summary_table()
     DataFolder = "OVDAQ/DATA";
     sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
   }
-  static string OutputDir = tmpoutdir; // I don't know if this has to be static,
-                                       // but it was a global before
+  const string OutputDir = tmpoutdir;
   OutputFolder = OutputDir + "DATA/";
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
