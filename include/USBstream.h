@@ -1,7 +1,6 @@
 #ifndef __USBstream_h__
 #define __USBstream_h__
 
-#include <USBstream-TypeDef.h>
 #include <USBstreamUtils.h>
 
 #include "TObject.h"

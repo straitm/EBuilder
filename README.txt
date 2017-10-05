@@ -7,7 +7,6 @@ M. Toups
 Created: 9/10/09
 Updated: 11/24/09
 
-Compilation: ROOT must be properly installed on your system.
 The Event Builder has been tested with root522 compiled with SL5 and gcc 4.4.0
 
 The OV event builder assumes the existence of the following paths or files:

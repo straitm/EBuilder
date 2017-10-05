@@ -6,17 +6,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
-#include <vector>
 #include <string.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <netdb.h>
 #include <syslog.h>
 #include <dirent.h>
 #include <errno.h>
-#include <time.h>
-
-//#include<GaibuClient.cxx>
 
 #define BUFSIZE   1024
 #define MNAME            -1
@@ -89,7 +83,6 @@ inline void get_gaibu_config()
   char spaceIP_path[BUFSIZE];
   sprintf(spaceIP_path,"%s/config/DCSpaceIP.config",getenv("DCONLINE_PATH"));
 
-  //GAIBU_SERVER_IP[BUFSIZE];
   sprintf(GAIBU_SERVER_IP,"%s",config_string(spaceIP_path,"DCGAIBU_IP"));
   printf("Gaibu ip: %s\n",GAIBU_SERVER_IP);
 
@@ -109,7 +102,6 @@ inline int init_socket(struct sockaddr_in *serveraddr, char *hostname, int portn
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd < 0) {
     printf("ERROR opening socket");
-    //error("ERROR opening socket");
   }
 
   /* gethostbyname: get the server's DNS entry */
@@ -122,7 +114,6 @@ inline int init_socket(struct sockaddr_in *serveraddr, char *hostname, int portn
   /* build the server's Internet address */
   bzero((char *) &(*serveraddr), sizeof((*serveraddr)));
   (*serveraddr).sin_family = AF_INET;
-  //memcpy(&(*serveraddr)->sin_addr,server->h_addr,server->h_length);
   bcopy((char *)server->h_addr,
       (char *)&(*serveraddr).sin_addr.s_addr, server->h_length);
 
@@ -150,7 +141,6 @@ inline void send_mail(int priority, char *gaibu_buf, int run_num = 9999999)
   time(&rawtime);
   timeinfo = localtime ( &rawtime );
 
-  //sprintf(mail_message,"%sRun: %d\nError: %d\n%s",ctime(&rawtime),run_num,priority,gaibu_buf);
   sprintf(mail_message,"%.4d%.2d%.2d\n%.2d:%.2d:%.2d\n%.7d\nOV EBuilder\n%s",
       1900+timeinfo->tm_year,
       (1+timeinfo->tm_mon),
@@ -160,9 +150,8 @@ inline void send_mail(int priority, char *gaibu_buf, int run_num = 9999999)
       timeinfo->tm_sec,
       run_num,
       gaibu_buf);
-  //printf("mail_message: %s\n",mail_message);
-  sprintf(mail_command,". %s/DCOV/tools/ebuilder_notify.sh %d '%s'",getenv("DCONLINE_PATH"),priority,mail_message);
-  //printf("mail_command: %s\n",mail_command);
+  sprintf(mail_command,". %s/DCOV/tools/ebuilder_notify.sh %d '%s'",
+          getenv("DCONLINE_PATH"),priority,mail_message);
   system(mail_command);
 }
 
@@ -175,12 +164,15 @@ inline int gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber="")
   if(gaibu_sockfd < 0) {
     gaibu_sockfd = init_socket(&gaibu_serveraddr,GAIBU_SERVER_IP,GAIBU_PORTNUMBER);
     if(gaibu_sockfd>0) {
-      if (connect(gaibu_sockfd,(struct sockaddr *) &gaibu_serveraddr, sizeof(gaibu_serveraddr)) < 0) {
+      if(connect(gaibu_sockfd,(struct sockaddr *) &gaibu_serveraddr,
+                 sizeof(gaibu_serveraddr)) < 0) {
         gaibu_sockfd = -1;
-        sprintf(gaibu_msg_buf,"Gaibu server connection broken. Unsent message: %s\n",gaibu_buf);
+        sprintf(gaibu_msg_buf, "Gaibu server connection broken. Unsent message: %s\n",
+                gaibu_buf);
         syslog(LOG_ERR, gaibu_msg_buf);
         printf("Error connecting to gaibu server\n");
-      } else {
+      }
+      else {
         syslog(LOG_NOTICE,"OV EBuilder connected to gaibu server\n");
         sprintf(gaibu_msg_buf,"OVEBuilder\n");
 
@@ -208,10 +200,12 @@ inline int gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber="")
       gaibu_sockfd = init_socket(&gaibu_serveraddr,GAIBU_SERVER_IP,GAIBU_PORTNUMBER);
 
       if(gaibu_sockfd >= 0) {
-        if (connect(gaibu_sockfd,(struct sockaddr *) &gaibu_serveraddr, sizeof(gaibu_serveraddr)) < 0) {
+        if (connect(gaibu_sockfd, (struct sockaddr *) &gaibu_serveraddr,
+                    sizeof(gaibu_serveraddr)) < 0) {
 
           gaibu_sockfd = -1;
-          sprintf(gaibu_msg_buf,"Gaibu server connection broken. Unsent message: %s\n",gaibu_buf);
+          sprintf(gaibu_msg_buf,"Gaibu server connection broken. Unsent message: %s\n",
+                  gaibu_buf);
           syslog(LOG_ERR, gaibu_msg_buf);
           printf("Error connecting to gaibu server\n");
         } else {
@@ -230,7 +224,6 @@ inline int gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber="")
         syslog(LOG_ERR,"Error initializing gaibu socket\n");
         printf("Error initializing gaibu socket\n");
       }
-      //      return -1;
     }
 
     if(priority > 1) {
@@ -261,44 +254,40 @@ inline void start_gaibu()
   get_gaibu_config();
 
   sprintf(gaibu_debug_msg,"OV Event Builder Started");
-
-  //gaibu_msg(MNOTICE, gaibu_debug_msg);
 }
 
 inline bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew=0)
 {
   if( lhs.size() < 7 || rhs.size() < 7) {
-    //std::cerr << "Error! Vector size too small!\n";
     sprintf(gaibu_debug_msg,"Vector size error! Could not compare OV Hits");
     gaibu_msg(MERROR,gaibu_debug_msg);
     printf("Vector size error! Could not compare OV Hits\n");
     exit(1);
   }
-  /*
-     if( lhs.size() < 7 || rhs.size() < 7) {
-     std::cerr << "Error! Vector size too small!\n";
-     sprintf(gaibu_debug_msg,"Error! Vector size too small!");
-     gaibu_msg(MWARNING, gaibu_debug_msg);
-     exit(1);
-     }
-     */
+
   long int dt_high=( (lhs[1]<<8) + lhs[2] - (rhs[1]<<8) - rhs[2] );
   long int dt_low=( (lhs[3]<<8) + lhs[4] - (rhs[3]<<8) - rhs[4] );
   long int dt_16ns_high=( lhs[5] - rhs[5] );
   long int dt_16ns_low=( lhs[6] - rhs[6] );
 
   if(dt_high!=0) return dt_high<0; // Very different timestamps
-  else if(dt_low*dt_low>1) return dt_low<0; // Timestamps are not adjacent
-  else if(dt_16ns_high*dt_16ns_high>4000000) return dt_16ns_high>0; // Was sync pulse 2sec (sqrd)
-  else if(dt_16ns_high!=0) return dt_16ns_high<0; // Order hi 16 bits of clock counter
-  else return dt_16ns_low<(0-ClockSlew); // Order lo 16 bits of clock counter
+
+  if(dt_low*dt_low>1) return dt_low<0; // Timestamps are not adjacent
+
+  // Was sync pulse 2sec (sqrd)
+  if(dt_16ns_high*dt_16ns_high>4000000) return dt_16ns_high>0;
+
+  if(dt_16ns_high!=0) return dt_16ns_high<0; // Order hi 16 bits of clock counter
+
+  return dt_16ns_low<(0-ClockSlew); // Order lo 16 bits of clock counter
 }
 
-inline int GetDir(std::string dir, std::vector<std::string> &myfiles, int opt = 0, int opt2 = 0)
+inline int GetDir(std::string dir, std::vector<std::string> &myfiles,
+                  int opt = 0, int opt2 = 0)
 {
   DIR *dp;
   struct dirent *dirp;
-  std::string myfname;//,old_fname,new_fname;
+  std::string myfname;
 
   errno = 0;
   if((dp = opendir(dir.c_str())) == NULL) {
@@ -310,19 +299,18 @@ inline int GetDir(std::string dir, std::vector<std::string> &myfiles, int opt = 
   do{
     if((dirp = readdir(dp)) != NULL) {
       counter++;
-      myfname=std::string(dirp->d_name);
-      if(myfname.find(".") == myfname.npos || (opt && myfname.size() > 2)){// extensions reserved
-        if( opt2 || ( (myfname.find("baseline") == myfname.npos) && (myfname.find("processed") == myfname.npos) ) ) {
-          //std::cout << myfname << std::endl;
-          myfiles.push_back(myfname);
-        }
-      }
+      myfname = std::string(dirp->d_name);
+
+      // extensions reserved
+      if((myfname.find(".") == myfname.npos || (opt && myfname.size() > 2)) &&
+         (opt2 || (myfname.find("baseline") == myfname.npos &&
+         myfname.find("processed") == myfname.npos) ) )
+        myfiles.push_back(myfname);
     }
   } while(dirp!=NULL);
 
-  if(closedir(dp)<0) {
+  if(closedir(dp) < 0)
     return errno;
-  }
 
   dp=NULL;
 

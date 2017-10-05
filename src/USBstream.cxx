@@ -1,7 +1,5 @@
 #include "USBstream.h"
 
-//______________________________________________________
-
 USBstream::USBstream()
 {
   mythresh=0;
@@ -165,7 +163,10 @@ int USBstream::LoadFile(std::string nextfile)
     myFile = new fstream(myfilename, fstream::in | fstream::binary);
     if(myFile->is_open()) {
       if(stat(myfilename, &myfileinfo) == 0) { //get file size
-        if(myfileinfo.st_size) { IsOpen = true; return 1; }
+        if(myfileinfo.st_size) {
+          IsOpen = true;
+          return 1;
+        }
       }
       myFile->close(); delete myFile; // Clean up
       char msg_buf[100];
@@ -174,7 +175,9 @@ int USBstream::LoadFile(std::string nextfile)
       printf("USB %d has died. Exiting.\n",myusb);
       return -1;
     }
-    else { delete myFile; }
+    else {
+      delete myFile;
+    }
   }
   else return 1;
 
@@ -296,7 +299,7 @@ void USBstream::check_data()
     if(data[0] == 0xffff) { // check header
       if(!(got >= 2))
         break;
-      unsigned int len = data[1] & 255;
+      unsigned int len = data[1] & 0xff;
       if(len > 1) {
         if(!(got >= len + 1))
           break;
@@ -324,9 +327,13 @@ void USBstream::check_data()
                     low += (1 << 16);
                     packet->push_back(low);
                   }
-                  else { packet->push_back(low); }
+                  else {
+                    packet->push_back(low);
+                  }
                 }
-                else { packet->push_back(data[m]); }
+                else {
+                  packet->push_back(data[m]);
+                }
               }
               else {
                 packet->push_back(data[m]);
@@ -346,7 +353,9 @@ void USBstream::check_data()
                   }
                 }
               }
-              else { packet->push_back(data[m]); }
+              else {
+                packet->push_back(data[m]);
+              }
             }
           }
           if(m==1) {
@@ -360,7 +369,9 @@ void USBstream::check_data()
         if(!par) { // check parity
           got_packet = true;
           flush_extra();
-          if(first_packet) { first_packet = false; }
+          if(first_packet) {
+            first_packet = false;
+          }
 
           // This block builds muon events
           bool MuonEvent = false;
@@ -434,7 +445,9 @@ void USBstream::check_data()
                   myvec.insert(myvec.begin(),*packet);
                 }
               }
-              else { myvec.push_back(*packet); }
+              else {
+                myvec.push_back(*packet);
+              }
             }
           }
           //delete first few elements of data
@@ -468,19 +481,19 @@ void USBstream::check_data()
 
 bool USBstream::check_debug(unsigned long int d)
 {
-  unsigned int a = (d >> 16) & 255;
-  d = d & 65535;
+  unsigned int a = (d >> 16) & 0xff;
+  d = d & 0xffff;
 
   if(a == 0xc8) {
-    time_hi_1 = (d >> 8) & 255;
-    time_hi_2 = d & 255;
+    time_hi_1 = (d >> 8) & 0xff;
+    time_hi_2 = d & 0xff;
     got_hi = true;
     return 1;
   }
   else if(a == 0xc9) {
     if(got_hi) {
-      time_lo_1 = (d >> 8) & 255;
-      time_lo_2 = d & 255;
+      time_lo_1 = (d >> 8) & 0xff;
+      time_lo_2 = d & 0xff;
       got_hi = false;
       timestamps_read++;
       flush_extra();
@@ -503,7 +516,11 @@ bool USBstream::check_debug(unsigned long int d)
       long int t = (word_count[0] << 16) + word_count[1];
       long int v = (word_count[2] << 16) + word_count[3];
       long int diff = t - v - words;
-      if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
+      if(diff < 0) {
+        diff += (1 << 31);
+        diff += (1 << 31); // XXX what?  Is this taking advantage of overflow?
+                           // That's probably not a good idea.
+      }
       flush_extra();
     }
     return 1;

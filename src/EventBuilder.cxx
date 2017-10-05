@@ -1,17 +1,10 @@
 #include "USBstream.h"
-#include "USBstream-TypeDef.h"
-#include "USBstreamUtils.h"
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <iostream>
-#include <fstream>
-#include <vector>
+// XXX Is there a motivation to use ROOT's thread library and not a standard
+// one?  TThread is poorly documented, without even general explanation at
+// https://root.cern.ch/doc/master/classTThread.html
 #include "TThread.h"
-#include <sys/types.h>
 
-#include <string.h>
-#include <time.h>
 #include <algorithm>
 #include <sys/statvfs.h>
 #include <mysql++.h>
@@ -33,9 +26,9 @@ static const int ENDTIME=5; // Number of seconds before time out at end of run
 static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29;
 
 static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
-static TThread *th[maxUSB]; // An array of threads to decode files
-static TThread *tp; // Joiner thread for decoding
-static bool *ovf; // Keeps track of sync overflows for all boards
+static TThread *gThreads[maxUSB]; // An array of threads to decode files
+static TThread *joinerThread; // Joiner thread for decoding
+static bool *overflow; // Keeps track of sync overflows for all boards
 
 static long int *maxcount_16ns_lo; // Keeps track of max clock count
 static long int *maxcount_16ns_hi; // for sync overflows for all boards
@@ -83,12 +76,11 @@ static RunMode EBRunMode = kNormal;
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
 
-bool write_ebretval(int val)
+static bool write_ebretval(int val)
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
-  //Open connection
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
     gaibu_msg(MWARNING, gaibu_debug_msg);
@@ -135,26 +127,28 @@ bool write_ebretval(int val)
 }
 
 
-void *handle(void *ptr) // This defines a thread to decode files
+static void *handle(void *ptr) // This defines a thread to decode files
 {
   long int usb = (long int) ptr;
-  while(!OVUSBStream[(int)usb].decode()) { usleep(100); }
-  return 0;
+  while(!OVUSBStream[(int)usb].decode()) usleep(100);
+  return NULL;
 }
 
-void *joiner(void *ptr) // This thread joins the above threads
+static void *joiner(void *ptr) // This thread joins the above threads
 {
   long int nusb = (long int) ptr;
-  if((int)nusb < numUSB) {
-    for(int n=0; n<(int)nusb; n++) { th[Datamap[n]]->Join(); }
-  }
-  else { for(int n=0; n<numUSB; n++) { th[n]->Join(); } }
+  if((int)nusb < numUSB)
+    for(int n=0; n<(int)nusb; n++)
+      gThreads[Datamap[n]]->Join();
+  else
+    for(int n=0; n<numUSB; n++)
+      gThreads[n]->Join();
   finished = true;
-  return 0;
+  return NULL;
 }
 
 // opens output data file
-int open_file(string name)
+static int open_file(string name)
 {
   int temp_dataFile = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
   if ( temp_dataFile < 0 ) {
@@ -167,7 +161,7 @@ int open_file(string name)
   return temp_dataFile;
 }
 
-int check_disk_space(string dir)
+static int check_disk_space(string dir)
 {
   struct statvfs fiData;
   int free_space_percent;
@@ -196,10 +190,10 @@ int check_disk_space(string dir)
   return 0;
 }
 
-// FixME: To be optimized
-void check_status()
+// FixME: To be optimized (Was never done for Double Chooz.  Is it inefficient?)
+static void check_status()
 {
-  // Performancs monitor
+  // Performance monitor
   cout << "Found " << files.size() << " files." << endl;
   int f_delay = (int)(latency*files.size()/numUSB/20);
   if(f_delay != OV_EB_State) {
@@ -240,7 +234,7 @@ void check_status()
 // Loads files
 // Just check that it exists
 // (XXX which is it?)
-bool LoadRun(string &datadir)
+static bool LoadRun(string &datadir)
 {
   datadir = DataFolder + "/Run_" + RunNumber + "/binary";
 
@@ -263,7 +257,7 @@ bool LoadRun(string &datadir)
 
   string TempProcessedOutput = OutputFolder + "/processed";
   umask(0);
-  if(mkdir(OutputFolder.c_str(), 0777)) { //O_CREAT??
+  if(mkdir(OutputFolder.c_str(), 0777)) {
     if(EBRunMode != kRecovery) {
       sprintf(gaibu_debug_msg,"Error creating output file %s",OutputFolder.c_str());
       gaibu_msg(MEXCEPTION, gaibu_debug_msg);
@@ -272,7 +266,7 @@ bool LoadRun(string &datadir)
       exit(1);
     }
   }
-  else if(mkdir(TempProcessedOutput.c_str(), 0777)) { //O_CREAT??
+  else if(mkdir(TempProcessedOutput.c_str(), 0777)) {
     if(EBRunMode != kRecovery) {
       sprintf(gaibu_debug_msg,
         "Error creating output file %s",TempProcessedOutput.c_str());
@@ -282,7 +276,7 @@ bool LoadRun(string &datadir)
       exit(1);
     }
   }
-  else { // FixMe: To optimize (logic)
+  else { // FixMe: To optimize (logic) (Was never done for Double Chooz - needed?)
     if(EBRunMode == kRecovery) {
       sprintf(gaibu_debug_msg,
         "Output directories did not already exist in recovery mode.");
@@ -299,7 +293,7 @@ bool LoadRun(string &datadir)
 // Loads files
 // Checks to see if files are ready to be processed
 // (XXX Which is it?)
-int LoadAll(string dir)
+static int LoadAll(string dir)
 {
   int r = check_disk_space(dir);
   if(r < 0) {
@@ -310,7 +304,7 @@ int LoadAll(string dir)
   }
 
   if(EBRunMode != kReprocess) {
-    // FixME: Is 2*numUSB sufficient to guaruntee a match?
+    // FixME: Is 2*numUSB sufficient to guarantee a match?
     if((int)files.size() <= 3*numUSB) {
       files.clear();
       if(GetDir(dir,files))
@@ -386,18 +380,18 @@ int LoadAll(string dir)
     base_filename=dir;
     base_filename.append("/");
     base_filename.append(ftime_min);
-    if( (status = OVUSBStream[k].LoadFile(base_filename)) < 1 ) { // Can't load file
+    if( (status = OVUSBStream[k].LoadFile(base_filename)) < 1 ) // Can't load file
       return status;
-    }
+
     fname_begin++; // Increment file name iterator
   }
 
   files.assign(fname_begin,files.end());
-  //fname_curr = fname_begin; // Update position of iterator
   return 1;
 }
 
-void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int mydataFile)
+static void BuildEvent(DataVector *OutDataVector,
+                       vector<int> *OutIndexVector, int mydataFile)
 {
 
   int k, nbs, length, module, type, nwords, module_local, usb;
@@ -428,9 +422,9 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
 
     if(CurrentOutDataVectorIt->size() < 7) {
       sprintf(gaibu_debug_msg,"Fatal Error in Build Event: Vector of "
-        "data found with too few words..");
+        "data found with too few words.");
       gaibu_msg(MEXCEPTION, gaibu_debug_msg,RunNumber);
-      printf("Fatal Error in Build Event: Vector of data found with too few words..");
+      printf("Fatal Error in Build Event: Vector of data found with too few words.");
       write_ebretval(-1);
       exit(1);
     }
@@ -438,7 +432,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
     if(CurrentOutDataVectorIt == OutDataVector->begin()) { // First packet in built event
       time_s_hi = (CurrentOutDataVectorIt->at(1) << 8) + CurrentOutDataVectorIt->at(2);
       time_s_lo = (CurrentOutDataVectorIt->at(3) << 8) + CurrentOutDataVectorIt->at(4);
-      CurrEventHeader->SetTimeSec(time_s_hi*65536 + time_s_lo);
+      CurrEventHeader->SetTimeSec(time_s_hi*0x10000 + time_s_lo);
       CurrEventHeader->SetNOVDataPackets(OutDataVector->size());
 
       nbs = write(mydataFile, CurrEventHeader, sizeof(OVEventHeader));
@@ -466,13 +460,13 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
     // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows in 62.5 MHz
     // clock count bit corresponding to SYNC_PULSE_CLK_COUNT_PERIOD_LOG2
     if( (time_16ns_hi >> (SYNC_PULSE_CLK_COUNT_PERIOD_LOG2 - 16)) ) {
-      if(!ovf[module]) {
+      if(!overflow[module]) {
         sprintf(gaibu_debug_msg,"Module %d missed sync pulse near "
-          "time stamp %ld",module,(time_s_hi*65536+time_s_lo));
+          "time stamp %ld",module,(time_s_hi*0x10000+time_s_lo));
         gaibu_msg(MWARNING, gaibu_debug_msg);
         printf(gaibu_debug_msg,"Module %d missed sync pulse near time "
-          "stamp %ld \n",module,(time_s_hi*65536+time_s_lo));
-        ovf[module] = true;
+          "stamp %ld \n",module,(time_s_hi*0x10000+time_s_lo));
+        overflow[module] = true;
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
       }
@@ -482,7 +476,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
       }
     }
     else {
-      if(ovf[module]) {
+      if(overflow[module]) {
         sprintf(gaibu_debug_msg,"Module %d max clock count hi: %ld\tlo: "
           "%ld",module,maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
         gaibu_msg(MWARNING, gaibu_debug_msg);
@@ -490,7 +484,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
           "%ld \n",module,maxcount_16ns_hi[module],maxcount_16ns_lo[module]);
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
-        ovf[module] = false;
+        overflow[module] = false;
       }
     }
 
@@ -514,7 +508,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
          * at expected clock count */
         // Firmware only allows this for special sync pulse packets in trigger box
         if(length == 32) {
-          long int time_16ns_sync = time_16ns_hi*65536+time_16ns_lo;
+          long int time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
           long int expected_time_16ns_sync = (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
           long int expected_time_16ns_sync_offset = *(myoffsets[usb]+module_local);
           //Camillo modification
@@ -538,7 +532,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
     CurrDataPacketHeader->SetNHits((char)length);
     CurrDataPacketHeader->SetModule((short int)module);
     CurrDataPacketHeader->SetType((char)type);
-    CurrDataPacketHeader->SetTime16ns(time_16ns_hi*65536 + time_16ns_lo);
+    CurrDataPacketHeader->SetTime16ns(time_16ns_hi*0x10000 + time_16ns_lo);
 
     nbs = write(mydataFile, CurrDataPacketHeader, sizeof(OVDataPacketHeader));
     if (nbs<0){
@@ -547,7 +541,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
       printf("Fatal Error: Cannot write data packet header to disk!\n");
       write_ebretval(-1);
       exit(1);
-    } // To be optimize
+    } // To be optimize -- never done for Double Chooz.  Needed?
 
     if(type == 1) { // PMTBOARD ADC Packet
 
@@ -564,7 +558,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
           printf("Fatal Error: Cannot write ov hit to disk!\n");
           write_ebretval(-1);
           exit(1);
-        } // To be optimized
+        } // To be optimized -- never done for Double Chooz.  Needed?
 
         cnt++;
       }
@@ -585,7 +579,7 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
               printf("Fatal Error: Cannot write ov hit to disk!\n");
               write_ebretval(-1);
               exit(1);
-            } // To be optimized
+            } // To be optimized -- never done for Double Chooz.  Needed?
 
             cnt++;
           }
@@ -602,12 +596,12 @@ void BuildEvent(DataVector *OutDataVector, vector<int> *OutIndexVector, int myda
   delete CurrHit;
 }
 
-int check_options(int argc, char **argv)
+static int check_options(int argc, char **argv)
 {
   int index;
   char c;
   bool show_help=0;
-  char run_number[BUFSIZE]; // run number
+  char run_number[BUFSIZE];
   char mydaqhost[BUFSIZE];
   int datadisk = 0;
   int myoutdisk = 0;
@@ -662,7 +656,7 @@ int check_options(int argc, char **argv)
   return 1;
 }
 
-void CalculatePedestal(DataVector* BaselineData, int **baseptr)
+static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
 {
   double baseline[maxModules][numChannels] = {};
   int counter[maxModules][numChannels] = {};
@@ -719,12 +713,11 @@ void CalculatePedestal(DataVector* BaselineData, int **baseptr)
   }
 }
 
-bool WriteBaselineTable(int **baseptr, int usb)
+static bool WriteBaselineTable(int **baseptr, int usb)
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
-  //Open connection
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
     gaibu_msg(MNOTICE, gaibu_debug_msg);
@@ -787,7 +780,7 @@ bool WriteBaselineTable(int **baseptr, int usb)
   return true;
 }
 
-bool GetBaselines()
+static bool GetBaselines()
 {
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search baseline directory for files and sort them lexigraphically
@@ -858,20 +851,20 @@ bool GetBaselines()
   // Decode all files at once and load into memory
   for(int j=0; j<numUSB-numFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n",Datamap[j]);
-    th[Datamap[j]] = new TThread(Form("th%d",Datamap[j]), handle, (void*) Datamap[j]);
-    th[Datamap[j]]->Run();
+    gThreads[Datamap[j]] = new TThread(Form("gThreads%d",Datamap[j]), handle, (void*) Datamap[j]);
+    gThreads[Datamap[j]]->Run();
   }
 
-  tp = new TThread("tp", joiner, (void*) (numUSB-numFanUSB));
-  tp->Run();
+  joinerThread = new TThread("joinerThread", joiner, (void*) (numUSB-numFanUSB));
+  joinerThread->Run();
 
-  while(!finished) { sleep(1); } // To be optimized
+  while(!finished) sleep(1); // To be optimized -- never done for Double Chooz - needed?
   finished = false;
 
-  tp->Join();
+  joinerThread->Join();
 
-  for(int k=0; k<numUSB-numFanUSB; k++) { delete th[Datamap[k]]; }
-  delete tp;
+  for(int k=0; k<numUSB-numFanUSB; k++) delete gThreads[Datamap[k]];
+  delete joinerThread;
 
   cout << "Joined all threads!\n";
 
@@ -914,7 +907,7 @@ bool GetBaselines()
 }
 
 
-bool write_ebsummary()
+static bool write_ebsummary()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
@@ -958,7 +951,7 @@ bool write_ebsummary()
 }
 
 
-bool read_summary_table()
+static bool read_summary_table()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
@@ -971,7 +964,6 @@ bool read_summary_table()
   sprintf(password,"%s",config_string(DCDatabase_path,"DCDB_OV_PASSWORD"));
   sprintf(database,"%s",config_string(DCDatabase_path,"DCDB_OV_DBNAME"));
 
-  //Open connection
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
     gaibu_msg(MWARNING, gaibu_debug_msg);
@@ -1064,7 +1056,7 @@ bool read_summary_table()
   for(USBmapIt = USBmap.begin(); USBmapIt!=USBmap.end(); USBmapIt++) {
     bool PMTUSBFound = false;
     for(DatamapIt = Datamap.begin(); DatamapIt!=Datamap.end(); DatamapIt++) {
-      if(USBmapIt->second == DatamapIt->second) { PMTUSBFound = true; }
+      if(USBmapIt->second == DatamapIt->second) PMTUSBFound = true;
     }
     if(!PMTUSBFound) {
       OVUSBStream[USBmapIt->second].SetIsFanUSB();
@@ -1130,16 +1122,16 @@ bool read_summary_table()
   int max = 0; int pmtnum;
   for(int i = 0; i<(int)res.num_rows(); i++) {
     pmtnum = atoi(res[i][0]);
-    if(pmtnum > max) { max = pmtnum; }
+    if(pmtnum > max) max = pmtnum;
   }
   sprintf(gaibu_debug_msg,"Found max PMT board number %d in table %s",max,config_table);
   printf("Found max PMT board number %d in table %s\n",max,config_table);
 
-  ovf = new bool[max+1];
+  overflow = new bool[max+1];
   maxcount_16ns_hi = new long int[max+1];
   maxcount_16ns_lo = new long int[max+1];
   for(int i = 0; i<max+1; i++) {
-    ovf[i] = false;
+    overflow[i] = false;
     maxcount_16ns_hi[i] = 0;
     maxcount_16ns_lo[i] = 0;
   }
@@ -1172,8 +1164,8 @@ bool read_summary_table()
     return false;
   }
   for(int i = 0; i<(int)res.num_rows(); i++) {
-    if(atoi(res[i][0])!=-999) { ++totalPMTboards; }
-    else { ++totalFanboards; }
+    if(atoi(res[i][0])!=-999) ++totalPMTboards;
+    else ++totalFanboards;
     // This is a temporary internal mapping used only by the EBuilder
     PMTUniqueMap[1000*atoi(res[i][1])+atoi(res[i][2])] = atoi(res[i][3]);
   }
@@ -1223,14 +1215,17 @@ bool read_summary_table()
   if(OVRunType.compare("P") == 0) {
     DataFolder = "OVDAQ/DATA";
     sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
-  } else if(OVRunType.compare("C") == 0) {
-    DataFolder = "OVDAQ/DATA";
-    sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
-  } else { // DEBUG mode
+  }
+  else if(OVRunType.compare("C") == 0) {
     DataFolder = "OVDAQ/DATA";
     sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
   }
-  static string OutputDir = tmpoutdir; // I don't know if this has to be static
+  else { // DEBUG mode
+    DataFolder = "OVDAQ/DATA";
+    sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
+  }
+  static string OutputDir = tmpoutdir; // I don't know if this has to be static,
+                                       // but it was a global before
   OutputFolder = OutputDir + "DATA/";
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1314,7 +1309,7 @@ bool read_summary_table()
       myconn.disconnect();
       return false;
     }
-    if(!res[0][7].is_null()) { SubRunCounter = timestampsperoutput*atoi(res[0][7]); }
+    if(!res[0][7].is_null()) SubRunCounter = timestampsperoutput*atoi(res[0][7]);
 
   }
 
@@ -1350,7 +1345,7 @@ bool read_summary_table()
   // Connect to EBuilder MySQL table
   if(EBRunMode == kReprocess) {
 
-    umask(0); // For file permissions
+    umask(0);
     char tempfolder[BUFSIZE];
 
     sprintf(query_string,"SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
@@ -1376,7 +1371,7 @@ bool read_summary_table()
 
       sprintf(tempfolder,"%sREP/Run_%s",OutputDir.c_str(),RunNumber.c_str());
       OutputFolder = tempfolder;
-      if(mkdir(OutputFolder.c_str(), 0777)) { //O_CREAT??
+      if(mkdir(OutputFolder.c_str(), 0777)) {
         if(errno != EEXIST) {
           sprintf(gaibu_debug_msg,"Error (%d) creating output folder %s",
                   errno,OutputFolder.c_str());
@@ -1484,7 +1479,7 @@ bool read_summary_table()
     sprintf(tempfolder,"%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
             OutputDir.c_str(),RunNumber.c_str(),(int)EBTrigMode,Threshold,Res1,Res2);
     OutputFolder = tempfolder;
-    if(mkdir(OutputFolder.c_str(), 0777)) { //O_CREAT??
+    if(mkdir(OutputFolder.c_str(), 0777)) {
       if(errno != EEXIST) {
         sprintf(gaibu_debug_msg,"Error (%d) creating output folder %s",
                 errno,OutputFolder.c_str());
@@ -1498,13 +1493,10 @@ bool read_summary_table()
         gaibu_msg(MWARNING, gaibu_debug_msg);
         printf("Output folder %s already exists.\n",OutputFolder.c_str());
       }
-
     }
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   }
-  if(!Repeat) {
-    if(!write_ebsummary()) {return false; }
-  }
+
+  if(!Repeat && !write_ebsummary()) return false;
 
   if(EBRunMode != kNormal) {
 
@@ -1554,11 +1546,11 @@ bool read_summary_table()
     for(int k = 0; k<(int)initial_files.size(); k++) {
       fusb = (initial_files[k]).substr(fname_it_delim+1,2);
       iusb = (int)strtol(fusb.c_str(),&pEnd,10);
-      if(!mymap.count(iusb)) { mymap[iusb] = mapindex++; }
+      if(!mymap.count(iusb)) mymap[iusb] = mapindex++;
       (myfiles[mymap[iusb]]).push_back(initial_files[k]);
     }
 
-    vector<string> files_to_rename;// = initial_files;
+    vector<string> files_to_rename;
     int avgsize = initial_files.size()/numUSB;
     if(EBRunMode == kRecovery) {
       for(int j = 0; j<numUSB; j++) {
@@ -1583,18 +1575,17 @@ bool read_summary_table()
     for(int i = 0; i<(int)files_to_rename.size(); i++) {
       rn = 0;
       rn_error = 0;
-      //tempfname = initial_files[tot_file_count - i];
       tempfname = files_to_rename[i];
       temppos = tempfname.find("decoded");
-      if(temppos != tempfname.npos) {
+      if(temppos != tempfname.npos)
         tempfname.replace(temppos,7,"binary");
-      }
-      else { rn_error = 1; }
+      else
+        rn_error = 1;
       temppos = tempfname.find(".done");
-      if(temppos != tempfname.npos) {
+      if(temppos != tempfname.npos)
         tempfname.replace(temppos,5,"");
-      }
-      else { rn_error = 1; }
+      else
+        rn_error = 1;
       if(!rn_error) {
         while(rename(files_to_rename[i].c_str(),tempfname.c_str())) {
             sprintf(gaibu_debug_msg,"Could not rename decoded data file.");
@@ -1617,12 +1608,11 @@ bool read_summary_table()
   return true;
 }
 
-bool write_summary_table(long int lasttime, int subrun)
+static bool write_summary_table(long int lasttime, int subrun)
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
-  //Open connection
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
     gaibu_msg(MWARNING, gaibu_debug_msg);
@@ -1648,12 +1638,11 @@ bool write_summary_table(long int lasttime, int subrun)
   return true;
 }
 
-bool read_stop_time()
+static bool read_stop_time()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
-  //Open connection
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
     gaibu_msg(MWARNING, gaibu_debug_msg);
@@ -1687,7 +1676,7 @@ bool read_stop_time()
   return true;
 }
 
-bool write_endofrun_block(string myfname, int data_fd)
+static bool write_endofrun_block(string myfname, int data_fd)
 {
   cout << "Trying to write end of run block" << endl;
   if(EBRunMode == kRecovery || SubRunCounter % timestampsperoutput == 0) {
@@ -1734,7 +1723,10 @@ int main(int argc, char **argv)
   }
 
   int r = check_options(argc, argv);
-  if(r < 0) { write_ebretval(-1); return 127; }
+  if(r < 0) {
+    write_ebretval(-1);
+    return 127;
+  }
 
   DataVector ExtraDataVector; // DataVector carries over events from last time stamp
   vector<int> ExtraIndexVector;
@@ -1779,7 +1771,7 @@ int main(int argc, char **argv)
       write_ebretval(-1);
       return 127;
     }
-    else sleep(2); // FixME: optimize?
+    else sleep(2); // FixME: optimize? -- never done for Double Chooz -- needed?
   }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1825,7 +1817,7 @@ int main(int argc, char **argv)
           cout << "Files are not ready...\n";
           if((int)difftime(time(0),timeout) > ENDTIME) {
             if(read_stop_time() || (int)difftime(time(0),timeout) > MAXTIME) {
-              while(!write_endofrun_block(fname, dataFile)) { sleep(1); }
+              while(!write_endofrun_block(fname, dataFile)) sleep(1);
 
               if((int)difftime(time(0),timeout) > MAXTIME) {
                 sprintf(gaibu_debug_msg,"No data found for %d seconds!  "
@@ -1846,38 +1838,38 @@ int main(int argc, char **argv)
               return 0;
             }
           }
-          sleep(1); // FixMe: optimize?
+          sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
         }
 
         for(int j=0; j<numUSB; j++) { // Load all files in at once
           printf("Starting Thread %d\n",j);
-          th[j] = new TThread(Form("th%d",j), handle, (void*) j);
-          th[j]->Run();
+          gThreads[j] = new TThread(Form("gThreads%d",j), handle, (void*) j);
+          gThreads[j]->Run();
         }
 
-        tp = new TThread("tp", joiner, (void*) numUSB);
-        tp->Run();
+        joinerThread = new TThread("joinerThread", joiner, (void*) numUSB);
+        joinerThread->Run();
 
-        while(!finished) { sleep(1); } // To be optimized
+        while(!finished) sleep(1); // To be optimized -- never done for
+                                   // Double Chooz -- needed?
         finished = false;
 
-        tp->Join();
+        joinerThread->Join();
 
-        for(int k=0; k<numUSB; k++) {
-          if(th[k]) delete th[k];
-        }
-        if(tp) delete tp;
+        for(int k=0; k<numUSB; k++)
+          if(gThreads[k])
+            delete gThreads[k];
+        if(joinerThread) delete joinerThread;
 
         cout << "Joined all threads!\n";
 
         //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        // Rename file names
+        // Rename files
         for(int i = 0; i<numUSB; i++) {
           tempfilename = OVUSBStream[i].GetFileName();
           size_t mypos = tempfilename.find("binary");
-          if(mypos != tempfilename.npos) {
+          if(mypos != tempfilename.npos)
             tempfilename.replace(mypos,6,"decoded");
-          }
           tempfilename += ".done";
 
           while(rename(OVUSBStream[i].GetFileName(),tempfilename.c_str())) {
@@ -1887,8 +1879,8 @@ int main(int argc, char **argv)
             sleep(1);
           }
         }
-      } // End of while(OVUSBStream[i].GetNextTimeStamp==false) loop
-    } // End of for loop: data has been loaded into CurrentDataVec properly
+      }
+    }
 
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Open output data file
@@ -1916,7 +1908,7 @@ int main(int argc, char **argv)
     MinIndex=0;
     for(int i=0; i < numUSB; i++) {
       CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
-      if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) { MinIndex = i; }
+      if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) MinIndex = i;
     }
     MinDataVector.assign(ExtraDataVector.begin(),ExtraDataVector.end());
     MinIndexVector.assign(ExtraIndexVector.begin(),ExtraIndexVector.end());
