@@ -74,10 +74,9 @@ static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
 static char gaibu_debug_msg[BUFSIZE];
 
-static bool write_ebretval(int val)
+static bool write_ebretval(const int val)
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-  mysqlpp::StoreQueryResult res;
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
@@ -88,10 +87,9 @@ static bool write_ebretval(int val)
   char insert_base[BUFSIZE] = "SELECT Run_number FROM OV_runsummary WHERE ";
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"%s Run_number = '%s';",
-          insert_base,RunNumber.c_str());
+  sprintf(query_string,"%s Run_number = '%s';", insert_base,RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
-  res = query.store();
+  mysqlpp::StoreQueryResult res = query.store();
 
   if(res.num_rows() == 1) {  // Run has never been reprocessed with this configuration
 
@@ -106,8 +104,8 @@ static bool write_ebretval(int val)
       myconn.disconnect();
       return false;
     }
-
-  } else {
+  }
+  else {
     sprintf(gaibu_debug_msg,
             "Did not find unique OV_runsummary entry for run %s in eb_writeretval",
             RunNumber.c_str());
@@ -569,26 +567,24 @@ static void BuildEvent(DataVector *OutDataVector,
 
 static int check_options(int argc, char **argv)
 {
-  int index;
-  char c;
-  bool show_help=0;
-  char run_number[BUFSIZE];
-  char mydaqhost[BUFSIZE];
-  int datadisk = 0;
-  int myoutdisk = 0;
-  int mythresh = 0;
-  int mytrigger = 0;
-  char myruntype[BUFSIZE];
+  bool show_help = false;
 
+  if(argc <= 1) show_help = true;
+
+  char c;
   while ((c = getopt (argc, argv, "d:r:t:T:R:H:e:h:")) != -1) {
+    char buf[BUFSIZE];
+
     switch (c) {
-    case 'd': datadisk=atoi(optarg); Disk = datadisk; break;
-    case 'r': strcpy(run_number,optarg); RunNumber = run_number; break;
-    case 't': mythresh=atoi(optarg); Threshold = mythresh;  break;
-    case 'T': mytrigger=atoi(optarg); EBTrigMode = (TriggerMode)mytrigger;  break;
-    case 'R': strcpy(myruntype,optarg); OVRunType = myruntype;  break;
-    case 'H': strcpy(mydaqhost,optarg); OVDAQHost = mydaqhost; break;
-    case 'e': myoutdisk=atoi(optarg); OutDisk = myoutdisk; break;
+    // XXX no overflow protection
+    case 'r': strcpy(buf,optarg); RunNumber = buf; break;
+    case 'H': strcpy(buf,optarg); OVDAQHost = buf; break;
+    case 'R': strcpy(buf,optarg); OVRunType = buf;  break;
+
+    case 'd': Disk = atoi(optarg); break;
+    case 't': Threshold = atoi(optarg); break;
+    case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
+    case 'e': OutDisk = atoi(optarg); break;
     case 'h':
     default:  show_help = true; break;
     }
@@ -596,13 +592,14 @@ static int check_options(int argc, char **argv)
   if(optind < argc) show_help = true;
   if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) show_help = true;
   if(Threshold < 0) {
-    sprintf(gaibu_debug_msg,"Negative thresholds not allowed. Reseting threshold to 0");
-    gaibu_msg(MWARNING, gaibu_debug_msg);
-    Threshold = 0;
+    printf("Negative thresholds not allowed.\n");
+    show_help = true;
   }
 
-  for(index = optind; index < argc; index++)
+  for(int index = optind; index < argc; index++){
     printf("Non-option argument %s\n", argv[index]);
+    show_help = true;
+  }
 
   if(show_help) {
     printf("Usage: %s -r <run_number> [-d <data_disk>]\n",argv[0]);
@@ -1611,15 +1608,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
 
 int main(int argc, char **argv)
 {
-  if(argc <= 1) {
-    printf("Usage: ./EventBuilder -r <run_number> [opt args]\n");
-    printf("For help: /EventBuilder -h\n");
-    write_ebretval(-1);
-    return 127;
-  }
-
-  int r = check_options(argc, argv);
-  if(r < 0) {
+  if(check_options(argc, argv) < 0) {
     write_ebretval(-1);
     return 127;
   }
