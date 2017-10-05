@@ -117,7 +117,6 @@ bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew)
   if( lhs.size() < 7 || rhs.size() < 7) {
     sprintf(gaibu_debug_msg,"Vector size error! Could not compare OV Hits");
     gaibu_msg(MERROR,gaibu_debug_msg);
-    printf("Vector size error! Could not compare OV Hits\n");
     exit(1);
   }
 

@@ -167,7 +167,6 @@ int USBstream::LoadFile(std::string nextfile)
       char msg_buf[100];
       sprintf(msg_buf,"USB %d has died. Exiting.",myusb);
       gaibu_msg(MERROR,msg_buf);
-      printf("USB %d has died. Exiting.\n",myusb);
       return -1;
     }
     else {
@@ -243,7 +242,6 @@ bool USBstream::decode()
           char msg_buf[100];
           sprintf(msg_buf,"Found corrupted data in file %s",myfilename);
           gaibu_msg(MERROR,msg_buf);
-          printf("Found corrupted data in file %s\n",myfilename);
           exp = 0;
         }
       }
@@ -451,7 +449,6 @@ void USBstream::check_data()
         else {
           char gaibu_debug_msg[BUFSIZE];
           sprintf(gaibu_debug_msg,"Found packet parity mismatch in USB stream %d",myusb);
-          gaibu_msg(MERROR, gaibu_debug_msg);
         }
         delete packet;
       }
