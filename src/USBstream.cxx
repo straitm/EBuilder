@@ -1,3 +1,5 @@
+#include <stdlib.h>
+#include <iostream>
 #include "USBstream.h"
 
 USBstream::USBstream()
@@ -61,11 +63,8 @@ void USBstream::Reset()
 void USBstream::SetOffset(int *off)
 {
   for(int i = 0; i < 64; i++) {
-    if(*(off+i) > 0) {
-      offset[i] = *(off+i);
-    } else {
-      offset[i] = 0;
-    }
+    if(*(off+i) > 0) offset[i] = *(off+i);
+    else             offset[i] = 0;
   }
 }
 
@@ -83,12 +82,8 @@ void USBstream::SetBaseline(int **baseptr)
 {
   for(int i = 0; i < 64; i++) {
     for(int j = 0; j < 64; j++) {
-      if(*(*(baseptr+i)+j) > 0) {
-        baseline[i][j] = *(*(baseptr+i)+j);
-      }
-      else {
-        baseline[i][j] = 0;
-      }
+      if(*(*(baseptr+i)+j) > 0) baseline[i][j] = *(*(baseptr+i)+j);
+      else                      baseline[i][j] = 0;
     }
   }
 }
@@ -454,8 +449,9 @@ void USBstream::check_data()
           data.erase(data.begin(),data.begin()+len+1); //(no longer)
         }
         else {
+          char gaibu_debug_msg[BUFSIZE];
           sprintf(gaibu_debug_msg,"Found packet parity mismatch in USB stream %d",myusb);
-          printf("Found packet parity mismatch in USB stream %d\n",myusb);
+          gaibu_msg(MERROR, gaibu_debug_msg);
         }
         delete packet;
       }
@@ -544,8 +540,9 @@ void USBstream::flush_extra()
 
     // Ignore incomplete packets at the beginning of the run
     if(!first_packet && mytolutc) {
+      char gaibu_debug_msg[BUFSIZE];
       sprintf(gaibu_debug_msg,"Found x packet in file %s",myfilename);
-      printf("Found x packet in file %s\n",myfilename);
+      gaibu_msg(MNOTICE, gaibu_debug_msg);
     }
   }
 }

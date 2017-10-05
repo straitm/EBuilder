@@ -1,10 +1,12 @@
 #include "USBstream.h"
+#include "USBstreamUtils.h"
 
 // XXX Is there a motivation to use ROOT's thread library and not a standard
 // one?  TThread is poorly documented, without even general explanation at
 // https://root.cern.ch/doc/master/classTThread.html
 #include "TThread.h"
 
+#include <errno.h>
 #include <algorithm>
 #include <sys/statvfs.h>
 #include <mysql++.h>
@@ -75,6 +77,7 @@ enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 static RunMode EBRunMode = kNormal;
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
+static char gaibu_debug_msg[BUFSIZE];
 
 static bool write_ebretval(int val)
 {

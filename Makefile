@@ -13,7 +13,7 @@ ROOTLIBS     := $(shell root-config --libs)
 
 PREFIX=/home/strait
 
-CXXFLAGS      = -O2 -Wunused -Wall -Wextra -fPIC $(INC) \
+CXXFLAGS      = -O2 -Wunused -Wall -Wextra $(INC) \
                 -I/usr/include/mysql -I$(PREFIX)/include/mysql++
 LDFLAGS       = $(INC) # does nothing?
 SOFLAGS       = -shared
@@ -28,14 +28,11 @@ TARGET=$(MAIN:%.cxx=$(BINDIR)/%)
 all: dir $(TARGET)
 #------------------------------------------------------------------------------
 
-USBSTREAMO        = $(TMPDIR)/USBstream.o
-USBSTREAMSO       = $(TMPDIR)/libUSBstream.so
-USBSTREAMLIB      = $(shell pwd)/$(USBSTREAMSO)
-
+USBSTREAMO       = $(TMPDIR)/USBstream.o
+USBSTREAMUTILSO  = $(TMPDIR)/USBstreamUtils.o
 EVENTBUILDERO    = $(TMPDIR)/EventBuilder.o
-EVENTBUILDERS    = $(SRCDIR)/EventBuilder.cxx
 
-OBJS          = $(USBSTREAMO) $(EVENTBUILDERO)
+OBJS          = $(USBSTREAMO) $(USBSTREAMUTILSO) $(EVENTBUILDERO)
 
 #------------------------------------------------------------------------------
 
@@ -43,12 +40,8 @@ OBJS          = $(USBSTREAMO) $(EVENTBUILDERO)
 
 all: dir $(TARGET)
 
-$(USBSTREAMSO):     $(USBSTREAMO)
-	$(LD) $(SOFLAGS) $(LDFLAGS) $^ -o  $@
-	@echo "$@ done"
-
-$(TARGET): $(USBSTREAMSO) $(EVENTBUILDERO)
-	$(LD) $(LDFLAGS) $(EVENTBUILDERO) $(USBSTREAMLIB) $(LIBS) -o $@
+$(TARGET): $(OBJS)
+	$(LD) $(LDFLAGS) $(OBJS) $(LIBS) -o $@
 	@echo "$@ done"
 
 clean:
