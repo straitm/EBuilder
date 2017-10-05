@@ -25,6 +25,6 @@ bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew=0);
 void start_gaibu();
 
 int GetDir(std::string dir, std::vector<std::string> &myfiles,
-                  int opt = 0, int opt2 = 0);
+           int opt = 0, int opt2 = 0);
 
 #endif

@@ -105,7 +105,7 @@ static bool write_ebretval(int val)
             insert_base2,val,RunNumber.c_str());
 
     mysqlpp::Query query2 = myconn.query(query_string);
-    if(query2.execute()==false) {
+    if(!query2.execute()) {
       sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query2.error());
       gaibu_msg(MWARNING, gaibu_debug_msg);
       myconn.disconnect();
@@ -730,7 +730,7 @@ static bool WriteBaselineTable(int **baseptr, int usb)
                   RunNumber.c_str(),mydate,mytime,baseline_values.c_str());
 
           mysqlpp::Query query = myconn.query(query_string);
-          if(query.execute()==false) {
+          if(!query.execute()) {
             sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",
                     query_string,query.error());
             gaibu_msg(MNOTICE, gaibu_debug_msg);
@@ -850,7 +850,7 @@ static bool GetBaselines()
       CalculatePedestal(BaselineData,baselines);
       OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should I check for success here?
       usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
-      if(WriteBaselineTable(baselines,usb)==false) {
+      if(!WriteBaselineTable(baselines,usb)) {
         sprintf(gaibu_debug_msg,"Fatal Error writing baseline table to MySQL database");
         gaibu_msg(MERROR, gaibu_debug_msg);
         return false;
@@ -897,7 +897,7 @@ static bool write_ebsummary()
       RunNumber.c_str(),OutputFolder.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
 
     mysqlpp::Query query2 = myconn.query(query_string);
-    if(query2.execute()==false) {
+    if(!query2.execute()) {
       sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query2.error());
       gaibu_msg(MWARNING, gaibu_debug_msg);
       myconn.disconnect();
@@ -1537,7 +1537,7 @@ static bool write_summary_table(long int lasttime, int subrun)
   sprintf(query_string,"%s'%ld', EBsubrunnumber = '%d' WHERE Run_number "
     "= '%s';",insert_base,lasttime,subrun,RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
-  if(query.execute()==false) {
+  if(!query.execute()) {
     sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query.error());
     gaibu_msg(MWARNING, gaibu_debug_msg);
     myconn.disconnect();
@@ -1665,7 +1665,7 @@ int main(int argc, char **argv)
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load baseline data
   timeout = time(0);
-  while(GetBaselines()==false) { // Get baselines
+  while(!GetBaselines()) { // Get baselines
     if((int)difftime(time(0),timeout) > MAXTIME) {
       sprintf(gaibu_debug_msg,
         "Error: Baseline data not found in the last %d seconds.",MAXTIME);

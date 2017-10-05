@@ -120,21 +120,21 @@ bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew)
     exit(1);
   }
 
-  long int dt_high=( (lhs[1]<<8) + lhs[2] - (rhs[1]<<8) - rhs[2] );
-  long int dt_low=( (lhs[3]<<8) + lhs[4] - (rhs[3]<<8) - rhs[4] );
-  long int dt_16ns_high=( lhs[5] - rhs[5] );
-  long int dt_16ns_low=( lhs[6] - rhs[6] );
+  const long int dt_high = (lhs[1]<<8) + lhs[2] - (rhs[1]<<8) - rhs[2];
+  const long int dt_low  = (lhs[3]<<8) + lhs[4] - (rhs[3]<<8) - rhs[4];
+  const long int dt_16ns_high = lhs[5] - rhs[5];
+  const long int dt_16ns_low  = lhs[6] - rhs[6];
 
-  if(dt_high!=0) return dt_high<0; // Very different timestamps
+  if(dt_high != 0) return dt_high < 0; // Very different timestamps
 
-  if(dt_low*dt_low>1) return dt_low<0; // Timestamps are not adjacent
+  if(labs(dt_low) > 1) return dt_low < 0; // Timestamps are not adjacent
 
   // Was sync pulse 2sec (sqrd)
-  if(dt_16ns_high*dt_16ns_high>4000000) return dt_16ns_high>0;
+  if(labs(dt_16ns_high) > 2000) return dt_16ns_high > 0;
 
-  if(dt_16ns_high!=0) return dt_16ns_high<0; // Order hi 16 bits of clock counter
+  if(dt_16ns_high != 0) return dt_16ns_high < 0; // Order hi 16 bits of clock counter
 
-  return dt_16ns_low<(0-ClockSlew); // Order lo 16 bits of clock counter
+  return dt_16ns_low < -ClockSlew; // Order lo 16 bits of clock counter
 }
 
 void start_gaibu()
