@@ -84,7 +84,7 @@ char* config_string(const char* path, const char* key)
   return NULL;
 }
 
-// Send gaibu message and write to the syslog
+// Print message and write to the syslog
 void gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber)
 {
   char gaibu_msg_buf[BUFSIZE];
@@ -94,17 +94,11 @@ void gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber)
 
   printf(gaibu_msg_buf);
 
-  if(priority == 2){
-    syslog(LOG_NOTICE, gaibu_msg_buf);
+  if(priority == LOG_NOTICE || priority == LOG_WARNING || priority == LOG_ERR){
+    syslog(priority, gaibu_msg_buf);
   }
-  else if(priority == 3){
-    syslog(LOG_WARNING, gaibu_msg_buf);
-  }
-  else if(priority == 4){
-    syslog(LOG_ERR, gaibu_msg_buf);
-  }
-  else if(priority > 4){
-    syslog(LOG_CRIT, gaibu_msg_buf);
+  else if(priority == LOG_CRIT || priority == LOG_ALERT || priority == LOG_EMERG){
+    syslog(priority, gaibu_msg_buf);
     if(myRunNumber.empty())
       send_mail(priority,gaibu_buf);
     else
@@ -116,7 +110,7 @@ bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew)
 {
   if( lhs.size() < 7 || rhs.size() < 7) {
     sprintf(gaibu_debug_msg,"Vector size error! Could not compare OV Hits");
-    gaibu_msg(MERROR,gaibu_debug_msg);
+    gaibu_msg(LOG_ERR,gaibu_debug_msg);
     exit(1);
   }
 

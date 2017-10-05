@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include "USBstream.h"
+#include <syslog.h>
 
 USBstream::USBstream()
 {
@@ -166,7 +167,7 @@ int USBstream::LoadFile(std::string nextfile)
       myFile->close(); delete myFile; // Clean up
       char msg_buf[100];
       sprintf(msg_buf,"USB %d has died. Exiting.",myusb);
-      gaibu_msg(MERROR,msg_buf);
+      gaibu_msg(LOG_ERR,msg_buf);
       return -1;
     }
     else {
@@ -241,7 +242,7 @@ bool USBstream::decode()
         else {
           char msg_buf[100];
           sprintf(msg_buf,"Found corrupted data in file %s",myfilename);
-          gaibu_msg(MERROR,msg_buf);
+          gaibu_msg(LOG_ERR,msg_buf);
           exp = 0;
         }
       }
@@ -539,7 +540,7 @@ void USBstream::flush_extra()
     if(!first_packet && mytolutc) {
       char gaibu_debug_msg[BUFSIZE];
       sprintf(gaibu_debug_msg,"Found x packet in file %s",myfilename);
-      gaibu_msg(MNOTICE, gaibu_debug_msg);
+      gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
     }
   }
 }

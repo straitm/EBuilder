@@ -7,6 +7,7 @@
 #include "TThread.h"
 
 #include <errno.h>
+#include <syslog.h>
 #include <algorithm>
 #include <sys/statvfs.h>
 #include <mysql++.h>
@@ -80,7 +81,7 @@ static bool write_ebretval(const int val)
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     return false;
   }
 
@@ -100,7 +101,7 @@ static bool write_ebretval(const int val)
     mysqlpp::Query query2 = myconn.query(query_string);
     if(!query2.execute()) {
       sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query2.error());
-      gaibu_msg(MWARNING, gaibu_debug_msg);
+      gaibu_msg(LOG_WARNING, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
@@ -109,7 +110,7 @@ static bool write_ebretval(const int val)
     sprintf(gaibu_debug_msg,
             "Did not find unique OV_runsummary entry for run %s in eb_writeretval",
             RunNumber.c_str());
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -145,7 +146,7 @@ static int open_file(string name)
   int temp_dataFile = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
   if ( temp_dataFile < 0 ) {
     sprintf(gaibu_debug_msg,"Fatal Error: failed to open file %s",name.c_str());
-    gaibu_msg(MEXCEPTION,gaibu_debug_msg,RunNumber);
+    gaibu_msg(LOG_CRIT,gaibu_debug_msg,RunNumber);
     write_ebretval(-1);
     exit(1);
   }
@@ -158,7 +159,7 @@ static int check_disk_space(string dir)
   int free_space_percent;
   if((statvfs(dir.c_str(),&fiData)) < 0 ) {
     sprintf(gaibu_debug_msg,"Error: Failed to stat %s",dir.c_str());
-    gaibu_msg(MNOTICE, gaibu_debug_msg);
+    gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
     return 0;
   }
   else {
@@ -167,13 +168,13 @@ static int check_disk_space(string dir)
       if(free_space_percent < 3) {
         sprintf(gaibu_debug_msg,"Error: Can't write to disk: Found disk "
           ">97 percent full: statvfs called on %s",dir.c_str());
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         return -1;
       }
     }
     else {
       sprintf(gaibu_debug_msg,"Error: statvfs failed to read blocks in %s",dir.c_str());
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
       return -1;
     }
   }
@@ -191,7 +192,7 @@ static void check_status()
     if(f_delay > OV_EB_State) {
       if(OV_EB_State <= initial_delay) { // OV EBuilder was not already behind
         sprintf(gaibu_debug_msg,"Falling behind processing files");
-        gaibu_msg(MNOTICE, gaibu_debug_msg);
+        gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
       }
       else { // OV EBuilder was already behind
         Ddelay = f_delay - initial_delay;
@@ -199,14 +200,14 @@ static void check_status()
           Ddelay /= 3;
           sprintf(gaibu_debug_msg,
                   "Process has accumulated %d min of delay since starting",Ddelay);
-          gaibu_msg(MNOTICE, gaibu_debug_msg);
+          gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
         }
       }
     }
     else if(f_delay < OV_EB_State) {
       if(OV_EB_State >= initial_delay) {
         sprintf(gaibu_debug_msg,"Catching up processing files");
-        gaibu_msg(MNOTICE, gaibu_debug_msg);
+        gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
       }
       else {
         Ddelay = initial_delay - f_delay;
@@ -214,7 +215,7 @@ static void check_status()
           Ddelay /= 3;
           sprintf(gaibu_debug_msg,
             "Process has reduced data processing delay by %d min since starting",Ddelay);
-          gaibu_msg(MNOTICE, gaibu_debug_msg);
+          gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
         }
       }
     }
@@ -233,7 +234,7 @@ static bool LoadRun(string &datadir)
   if(GetDir(datadir, files)) {
     if(errno) {
       sprintf(gaibu_debug_msg,"Error(%d) opening directory %s",errno,datadir.c_str());
-      gaibu_msg(MEXCEPTION, gaibu_debug_msg);
+      gaibu_msg(LOG_CRIT, gaibu_debug_msg);
       write_ebretval(-1);
       exit(1);
     }
@@ -251,7 +252,7 @@ static bool LoadRun(string &datadir)
   if(mkdir(OutputFolder.c_str(), 0777)) {
     if(EBRunMode != kRecovery) {
       sprintf(gaibu_debug_msg,"Error creating output file %s",OutputFolder.c_str());
-      gaibu_msg(MEXCEPTION, gaibu_debug_msg);
+      gaibu_msg(LOG_CRIT, gaibu_debug_msg);
       write_ebretval(-1);
       exit(1);
     }
@@ -260,7 +261,7 @@ static bool LoadRun(string &datadir)
     if(EBRunMode != kRecovery) {
       sprintf(gaibu_debug_msg,
         "Error creating output file %s",TempProcessedOutput.c_str());
-      gaibu_msg(MEXCEPTION, gaibu_debug_msg);
+      gaibu_msg(LOG_CRIT, gaibu_debug_msg);
       write_ebretval(-1);
       exit(1);
     }
@@ -269,7 +270,7 @@ static bool LoadRun(string &datadir)
     if(EBRunMode == kRecovery) {
       sprintf(gaibu_debug_msg,
         "Output directories did not already exist in recovery mode.");
-      gaibu_msg(MEXCEPTION, gaibu_debug_msg);
+      gaibu_msg(LOG_CRIT, gaibu_debug_msg);
       write_ebretval(-1);
       exit(1);
     }
@@ -286,7 +287,7 @@ static int LoadAll(string dir)
   int r = check_disk_space(dir);
   if(r < 0) {
     sprintf(gaibu_debug_msg,"Fatal error in check_disk_space(%s)",dir.c_str());
-    gaibu_msg(MEXCEPTION, gaibu_debug_msg, RunNumber);
+    gaibu_msg(LOG_CRIT, gaibu_debug_msg, RunNumber);
     return r;
   }
 
@@ -312,7 +313,7 @@ static int LoadAll(string dir)
   string ftime_min;
   if(fname_begin->find(fdelim) == fname_begin->npos) {
     sprintf(gaibu_debug_msg,"Fatal Error: Cannot find '_' in input file name");
-    gaibu_msg(MEXCEPTION, gaibu_debug_msg,RunNumber);
+    gaibu_msg(LOG_CRIT, gaibu_debug_msg,RunNumber);
     return -1;
   }
 
@@ -331,7 +332,7 @@ static int LoadAll(string dir)
       }
       if(j==(int)(files.size()-1)) { // Failed to find a file for USB k
         sprintf(gaibu_debug_msg,"USB %d data file not found",OVUSBStream[k].GetUSB());
-        gaibu_msg(MWARNING, gaibu_debug_msg,RunNumber);
+        gaibu_msg(LOG_WARNING, gaibu_debug_msg,RunNumber);
         files.clear();
         return 0;
       }
@@ -349,13 +350,13 @@ static int LoadAll(string dir)
     // Error: All usbs should have been assigned by MySQL
     if(OVUSBStream[k].GetUSB() == -1) {
         sprintf(gaibu_debug_msg,"Fatal Error: USB number unassigned");
-        gaibu_msg(MEXCEPTION, gaibu_debug_msg, RunNumber);
+        gaibu_msg(LOG_CRIT, gaibu_debug_msg, RunNumber);
         return -1;
     }
     else { // Check to see that USB numbers are aligned
       if(OVUSBStream[k].GetUSB() != strtol(fusb.c_str(),&pEnd,10)) {
         sprintf(gaibu_debug_msg,"Fatal Error: USB number misalignment");
-        gaibu_msg(MEXCEPTION, gaibu_debug_msg, RunNumber);
+        gaibu_msg(LOG_CRIT, gaibu_debug_msg, RunNumber);
         return -1;
       }
     }
@@ -394,7 +395,7 @@ static void BuildEvent(DataVector *OutDataVector,
   if(mydataFile <= 0) {
     sprintf(gaibu_debug_msg,"Fatal Error in Build Event. Invalid file "
       "handle for previously opened data file!\n");
-    gaibu_msg(MEXCEPTION, gaibu_debug_msg,RunNumber);
+    gaibu_msg(LOG_CRIT, gaibu_debug_msg,RunNumber);
     write_ebretval(-1);
     exit(1);
   }
@@ -404,7 +405,7 @@ static void BuildEvent(DataVector *OutDataVector,
     if(CurrentOutDataVectorIt->size() < 7) {
       sprintf(gaibu_debug_msg,"Fatal Error in Build Event: Vector of "
         "data found with too few words.");
-      gaibu_msg(MEXCEPTION, gaibu_debug_msg,RunNumber);
+      gaibu_msg(LOG_CRIT, gaibu_debug_msg,RunNumber);
       write_ebretval(-1);
       exit(1);
     }
@@ -419,7 +420,7 @@ static void BuildEvent(DataVector *OutDataVector,
 
       if (nbs<0){
         sprintf(gaibu_debug_msg,"Fatal Error: Cannot write event header to disk!");
-        gaibu_msg(MEXCEPTION, gaibu_debug_msg, RunNumber);
+        gaibu_msg(LOG_CRIT, gaibu_debug_msg, RunNumber);
         write_ebretval(-1);
         exit(1);
       } // To be optimized
@@ -442,7 +443,7 @@ static void BuildEvent(DataVector *OutDataVector,
       if(!overflow[module]) {
         sprintf(gaibu_debug_msg,"Module %d missed sync pulse near "
           "time stamp %ld",module,(time_s_hi*0x10000+time_s_lo));
-        gaibu_msg(MWARNING, gaibu_debug_msg);
+        gaibu_msg(LOG_WARNING, gaibu_debug_msg);
         overflow[module] = true;
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
@@ -456,7 +457,7 @@ static void BuildEvent(DataVector *OutDataVector,
       if(overflow[module]) {
         sprintf(gaibu_debug_msg,"Module %d max clock count hi: %ld\tlo: "
           "%ld",module,maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
-        gaibu_msg(MWARNING, gaibu_debug_msg);
+        gaibu_msg(LOG_WARNING, gaibu_debug_msg);
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
         overflow[module] = false;
@@ -492,7 +493,7 @@ static void BuildEvent(DataVector *OutDataVector,
             sprintf(gaibu_debug_msg,"Trigger box module %d received "
               "sync pulse at clock count %ld instead of expected clock "
               "count (%ld).",module,time_16ns_sync,expected_time_16ns_sync);
-            gaibu_msg(MERROR, gaibu_debug_msg);
+            gaibu_msg(LOG_ERR, gaibu_debug_msg);
           }
         }
       }
@@ -509,7 +510,7 @@ static void BuildEvent(DataVector *OutDataVector,
     nbs = write(mydataFile, CurrDataPacketHeader, sizeof(OVDataPacketHeader));
     if (nbs<0){
       sprintf(gaibu_debug_msg,"Fatal Error: Cannot write data packet header to disk!");
-      gaibu_msg(MEXCEPTION, gaibu_debug_msg,RunNumber);
+      gaibu_msg(LOG_CRIT, gaibu_debug_msg,RunNumber);
       write_ebretval(-1);
       exit(1);
     } // To be optimize -- never done for Double Chooz.  Needed?
@@ -525,7 +526,7 @@ static void BuildEvent(DataVector *OutDataVector,
         nbs = write(mydataFile, CurrHit, sizeof(OVHitData));
         if (nbs<0){
           sprintf(gaibu_debug_msg,"Fatal Error: Cannot write ov hit to disk!");
-          gaibu_msg(MEXCEPTION, gaibu_debug_msg, RunNumber);
+          gaibu_msg(LOG_CRIT, gaibu_debug_msg, RunNumber);
           write_ebretval(-1);
           exit(1);
         } // To be optimized -- never done for Double Chooz.  Needed?
@@ -545,7 +546,7 @@ static void BuildEvent(DataVector *OutDataVector,
             nbs = write(mydataFile, CurrHit, sizeof(OVHitData));
             if (nbs<0){
               sprintf(gaibu_debug_msg,"Fatal Error: Cannot write ov hit to disk!");
-              gaibu_msg(MEXCEPTION, gaibu_debug_msg, RunNumber);
+              gaibu_msg(LOG_CRIT, gaibu_debug_msg, RunNumber);
               write_ebretval(-1);
               exit(1);
             } // To be optimized -- never done for Double Chooz.  Needed?
@@ -638,7 +639,7 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
     // Data Packets should have 7 + 2*num_hits elements
     if(BaselineDataIt->size() < 8 && BaselineDataIt->size() % 2 != 1) {
       sprintf(gaibu_debug_msg,"Fatal Error: Baseline data packet found with no data");
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
     }
 
     module = (BaselineDataIt->at(0) >> 8) & 0x7f;
@@ -648,7 +649,7 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
       if(module > maxModules) {
         sprintf(gaibu_debug_msg,"Fatal Error: Module number requested "
           "(%d) out of range in calculate pedestal",module);
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
       }
 
       for(int i = 7; i+1 < (int)BaselineDataIt->size(); i=i+2) {
@@ -657,7 +658,7 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
         if(channel >= numChannels) {
           sprintf(gaibu_debug_msg,"Fatal Error: Channel number requested "
             "(%d) out of range in calculate pedestal",channel);
-          gaibu_msg(MERROR, gaibu_debug_msg);
+          gaibu_msg(LOG_ERR, gaibu_debug_msg);
         }
         // Should these be modified to better handle large numbers of baseline triggers?
         baseline[module][channel] = (baseline[module][channel]*
@@ -681,7 +682,7 @@ static bool WriteBaselineTable(int **baseptr, int usb)
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
-    gaibu_msg(MNOTICE, gaibu_debug_msg);
+    gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
     return false;
   }
 
@@ -725,7 +726,7 @@ static bool WriteBaselineTable(int **baseptr, int usb)
           if(!query.execute()) {
             sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",
                     query_string,query.error());
-            gaibu_msg(MNOTICE, gaibu_debug_msg);
+            gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
             myconn.disconnect();
             return false;
           }
@@ -750,7 +751,7 @@ static bool GetBaselines()
     if(errno) {
       sprintf(gaibu_debug_msg,"Fatal Error(%d) opening binary "
         "directory %s for baselines",errno,in_dir.c_str());
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
     }
     return false;
   }
@@ -776,7 +777,7 @@ static bool GetBaselines()
     sprintf(gaibu_debug_msg,"Fatal Error: Baseline file count (%lu) != "
       "numUSB (%d) in directory %s", (long int)in_files.size(), numUSB,
        in_dir.c_str());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     return false;
   }
 
@@ -793,7 +794,7 @@ static bool GetBaselines()
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
         sprintf(gaibu_debug_msg,"Fatal Error: Found USB number "
           "unassigned while getting baselines");
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         return false;
     }
     if(OVUSBStream[Datamap[i]].LoadFile(in_dir+ "/baseline") < 1)
@@ -844,7 +845,7 @@ static bool GetBaselines()
       usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
       if(!WriteBaselineTable(baselines,usb)) {
         sprintf(gaibu_debug_msg,"Fatal Error writing baseline table to MySQL database");
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         return false;
       }
       BaselineData->clear();
@@ -867,7 +868,7 @@ static bool write_ebsummary()
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     return false;
   }
 
@@ -891,7 +892,7 @@ static bool write_ebsummary()
     mysqlpp::Query query2 = myconn.query(query_string);
     if(!query2.execute()) {
       sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query2.error());
-      gaibu_msg(MWARNING, gaibu_debug_msg);
+      gaibu_msg(LOG_WARNING, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
@@ -908,6 +909,8 @@ static bool read_summary_table()
   mysqlpp::StoreQueryResult res;
 
   char DCDatabase_path[BUFSIZE];
+
+  // XXX we don't have these environment variables.
   sprintf(DCDatabase_path,"%s/config/DCDatabase.config",getenv("DCONLINE_PATH"));
 
   sprintf(server,"%s",config_string(DCDatabase_path,"DCDB_SERVER_HOST"));
@@ -917,7 +920,7 @@ static bool read_summary_table()
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     return false;
   }
 
@@ -932,14 +935,14 @@ static bool read_summary_table()
   if(res.num_rows() < 1) {
     sprintf(gaibu_debug_msg,"Found no matching entry for run %s in "
       "OV_runsummary",RunNumber.c_str());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
   else if(res.num_rows() > 1) {
     sprintf(gaibu_debug_msg,"Found more than one entry for run %s "
       "in OV_runsummary. Using most recent entry.",RunNumber.c_str());
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
   }
   else {
     sprintf(gaibu_debug_msg,"Found MySQL run summary entry for run: %s",
@@ -957,7 +960,7 @@ static bool read_summary_table()
   res=query3.store();
   if(res.num_rows() < 1) {
     printf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query3.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -984,7 +987,7 @@ static bool read_summary_table()
   res=query4.store();
   if(res.num_rows() < 1) {
     printf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query4.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1020,7 +1023,7 @@ static bool read_summary_table()
   res=query45.store();
   if(res.num_rows() < 1) {
     printf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query45.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1049,7 +1052,7 @@ static bool read_summary_table()
   res=query5.store();
   if(res.num_rows() < 1) {
     printf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query5.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1087,7 +1090,7 @@ static bool read_summary_table()
   res=query6.store();
   if(res.num_rows() < 1) {
     printf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query3.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1100,7 +1103,7 @@ static bool read_summary_table()
   if((int)res.num_rows() != totalboards) { // config table has duplicate entries
     sprintf(gaibu_debug_msg,"Found duplicate pmtboard_u entries in table %s",
             config_table);
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1119,14 +1122,14 @@ static bool read_summary_table()
   res = query.store();
   if(res.num_rows() < 1) {
     sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
   else if(res.num_rows() > 1) { // Check that OVRunType is the same?
     sprintf(gaibu_debug_msg,"Found more than one entry for run %s in "
       "OV_runsummary. Using most recent entry",RunNumber.c_str());
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
   }
   else {
     sprintf(gaibu_debug_msg,"Found MySQL run summary entry for run: %s",
@@ -1140,7 +1143,7 @@ static bool read_summary_table()
     sprintf(gaibu_debug_msg,"MySQL Run Type: %s does not match "
       "command line Run Type: %s",
             res[0][1].c_str(),OVRunType.c_str());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1172,7 +1175,7 @@ static bool read_summary_table()
   else {
     sprintf(gaibu_debug_msg,"MySQL query error: could not retrieve "
       "data disk for Run: %s",RunNumber.c_str());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1189,7 +1192,7 @@ static bool read_summary_table()
       if(errno) {
         sprintf(gaibu_debug_msg,"Error(%d) opening directory %s",errno,
                 binary_dir.c_str());
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         myconn.disconnect();
         return false;
       }
@@ -1217,7 +1220,7 @@ static bool read_summary_table()
       sprintf(gaibu_debug_msg,"MySQL running parameters match "
         "reprocessing parameters. Threshold: %04d\tTrigger type: %01d",
         Threshold, (int)EBTrigMode);
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
@@ -1229,7 +1232,7 @@ static bool read_summary_table()
       sprintf(gaibu_debug_msg,"MySQL parameters do not match recovery "
         "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d",
         OVRunType.c_str(),Threshold, (int)EBTrigMode);
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
@@ -1242,19 +1245,19 @@ static bool read_summary_table()
   if(EBRunMode != kReprocess) {
     if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) { // Sanity check
       sprintf(gaibu_debug_msg,"Invalid EBTrigMode: %01d",EBTrigMode);
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
     if(EBTrigMode != (TriggerMode)atoi(res[0][3])) {
       sprintf(gaibu_debug_msg,"Trigger Mode requested (%d) will "
         "override MySQL setting (%d)",(int)EBTrigMode,atoi(res[0][3]));
-      gaibu_msg(MWARNING, gaibu_debug_msg);
+      gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     }
     if(Threshold != atoi(res[0][2])) {
       sprintf(gaibu_debug_msg,"Threshold requested (%d) will override "
         "MySQL setting (%d)",Threshold,atoi(res[0][2]));
-      gaibu_msg(MWARNING, gaibu_debug_msg);
+      gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     }
 
     printf("Threshold: %d \t EBTrigMode: %d\n",Threshold,EBTrigMode);
@@ -1274,11 +1277,11 @@ static bool read_summary_table()
 
     if(res2.num_rows() == 0) { // Can't find run in OV_ebuilder
       sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query2.error());
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
 
       sprintf(gaibu_debug_msg,"EBuilder did not finish processing run "
         "%s. Run recovery mode first.",RunNumber.c_str());
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
 
       myconn.disconnect();
       return false;
@@ -1291,14 +1294,14 @@ static bool read_summary_table()
         if(errno != EEXIST) {
           sprintf(gaibu_debug_msg,"Error (%d) creating output folder %s",
                   errno,OutputFolder.c_str());
-          gaibu_msg(MERROR, gaibu_debug_msg);
+          gaibu_msg(LOG_ERR, gaibu_debug_msg);
           myconn.disconnect();
           return false;
         }
         else {
           sprintf(gaibu_debug_msg,"Output folder %s already exists.",
                   OutputFolder.c_str());
-          gaibu_msg(MWARNING, gaibu_debug_msg);
+          gaibu_msg(LOG_WARNING, gaibu_debug_msg);
         }
       }
     }
@@ -1321,7 +1324,7 @@ static bool read_summary_table()
       sprintf(gaibu_debug_msg,"Same reprocessing configuration found "
               "for run %s at %s. Deleting...",
               RunNumber.c_str(),Path.c_str());
-      gaibu_msg(MWARNING, gaibu_debug_msg);
+      gaibu_msg(LOG_WARNING, gaibu_debug_msg);
 
       //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       // Clean up old directory
@@ -1332,7 +1335,7 @@ static bool read_summary_table()
         if(errno) {
           sprintf(gaibu_debug_msg,"Error(%d) opening directory %s",
                   errno,tempdir.c_str());
-          gaibu_msg(MERROR, gaibu_debug_msg);
+          gaibu_msg(LOG_ERR, gaibu_debug_msg);
           myconn.disconnect();
           return false;
         }
@@ -1341,14 +1344,14 @@ static bool read_summary_table()
         tempfile = tempdir + "/" + old_files[m];
         if(remove(tempfile.c_str())) {
           sprintf(gaibu_debug_msg,"Error deleting file %s",tempfile.c_str());
-          gaibu_msg(MERROR, gaibu_debug_msg);
+          gaibu_msg(LOG_ERR, gaibu_debug_msg);
           myconn.disconnect();
           return false;
         }
       }
       if(rmdir(tempdir.c_str())) {
         sprintf(gaibu_debug_msg,"Error deleting folder %s",tempdir.c_str());
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         myconn.disconnect();
         return false;
       }
@@ -1359,7 +1362,7 @@ static bool read_summary_table()
         if(errno) {
           sprintf(gaibu_debug_msg,"Error(%d) opening directory %s",
                   errno,tempdir.c_str());
-          gaibu_msg(MERROR, gaibu_debug_msg);
+          gaibu_msg(LOG_ERR, gaibu_debug_msg);
           myconn.disconnect();
           return false;
         }
@@ -1368,14 +1371,14 @@ static bool read_summary_table()
         tempfile = tempdir + "/" + old_files[m];
         if(remove(tempfile.c_str())) {
           sprintf(gaibu_debug_msg,"Error deleting file %s",tempfile.c_str());
-          gaibu_msg(MERROR, gaibu_debug_msg);
+          gaibu_msg(LOG_ERR, gaibu_debug_msg);
           myconn.disconnect();
           return false;
         }
       }
       if(rmdir(tempdir.c_str())) {
         sprintf(gaibu_debug_msg,"Error deleting folder %s",tempdir.c_str());
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         myconn.disconnect();
         return false;
       }
@@ -1390,13 +1393,13 @@ static bool read_summary_table()
       if(errno != EEXIST) {
         sprintf(gaibu_debug_msg,"Error (%d) creating output folder %s",
                 errno,OutputFolder.c_str());
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         myconn.disconnect();
         return false;
       }
       else {
         sprintf(gaibu_debug_msg,"Output folder %s already exists.",OutputFolder.c_str());
-        gaibu_msg(MWARNING, gaibu_debug_msg);
+        gaibu_msg(LOG_WARNING, gaibu_debug_msg);
       }
     }
   }
@@ -1416,13 +1419,13 @@ static bool read_summary_table()
       if(errno) {
         sprintf(gaibu_debug_msg,"Error(%d) opening directory %s",
                 errno,decoded_dir.c_str());
-        gaibu_msg(MERROR, gaibu_debug_msg);
+        gaibu_msg(LOG_ERR, gaibu_debug_msg);
         myconn.disconnect();
         return false;
       }
       sprintf(gaibu_debug_msg,"No decoded files found in directory %s",
               decoded_dir.c_str());
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
@@ -1434,7 +1437,7 @@ static bool read_summary_table()
     string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
     if(fname_begin->find(fdelim) == fname_begin->npos) {
       sprintf(gaibu_debug_msg,"Error: Cannot find '_' in file name");
-      gaibu_msg(MWARNING, gaibu_debug_msg);
+      gaibu_msg(LOG_WARNING, gaibu_debug_msg);
       myconn.disconnect();
       return false;
     }
@@ -1492,14 +1495,14 @@ static bool read_summary_table()
       if(!rn_error) {
         while(rename(files_to_rename[i].c_str(),tempfname.c_str())) {
             sprintf(gaibu_debug_msg,"Could not rename decoded data file.");
-            gaibu_msg(MERROR,gaibu_debug_msg);
+            gaibu_msg(LOG_ERR,gaibu_debug_msg);
             sleep(1);
           }
       }
       else {
         sprintf(gaibu_debug_msg,"Unexpected decoded data file name: %s",
                 tempfname.c_str());
-        gaibu_msg(MERROR,gaibu_debug_msg);
+        gaibu_msg(LOG_ERR,gaibu_debug_msg);
         myconn.disconnect();
         return false;
       }
@@ -1516,7 +1519,7 @@ static bool write_summary_table(long int lasttime, int subrun)
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     return false;
   }
 
@@ -1528,7 +1531,7 @@ static bool write_summary_table(long int lasttime, int subrun)
   mysqlpp::Query query = myconn.query(query_string);
   if(!query.execute()) {
     sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query.error());
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1544,7 +1547,7 @@ static bool read_stop_time()
 
   if(!myconn.connect(database, server, username, password)) {
     sprintf(gaibu_debug_msg,"Cannot connect to MySQL database %s at %s",database,server);
-    gaibu_msg(MWARNING, gaibu_debug_msg);
+    gaibu_msg(LOG_WARNING, gaibu_debug_msg);
     return false;
   }
 
@@ -1556,7 +1559,7 @@ static bool read_stop_time()
   res = query.store();
   if(res.num_rows() < 1) {
     sprintf(gaibu_debug_msg,"MySQL query (%s) error: %s",query_string,query.error());
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     myconn.disconnect();
     return false;
   }
@@ -1581,7 +1584,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
     if(data_fd <= 0) {
       sprintf(gaibu_debug_msg,"Cannot open file %s to write "
         "end-of-run block for run %s",myfname.c_str(),RunNumber.c_str());
-      gaibu_msg(MERROR, gaibu_debug_msg);
+      gaibu_msg(LOG_ERR, gaibu_debug_msg);
       return false;
     }
   }
@@ -1593,14 +1596,14 @@ static bool write_endofrun_block(string myfname, int data_fd)
   int nbs = write(data_fd, CurrEventHeader, sizeof(OVEventHeader));
   if (nbs<0){
     sprintf(gaibu_debug_msg,"End of run write error");
-    gaibu_msg(MERROR, gaibu_debug_msg);
+    gaibu_msg(LOG_ERR, gaibu_debug_msg);
     return false;
   } // To be optimized
 
   int cl = close(data_fd);
   if(cl<0) {
     sprintf(gaibu_debug_msg,"Could not close output data file");
-    gaibu_msg(MERROR,gaibu_debug_msg);
+    gaibu_msg(LOG_ERR,gaibu_debug_msg);
   }
 
   return true;
@@ -1638,7 +1641,7 @@ int main(int argc, char **argv)
   // This should handle reprocessing eventually
   if(!read_summary_table()) {
     sprintf(gaibu_debug_msg,"Fatal Error while loading OV_runsummary table.");
-    gaibu_msg(MEXCEPTION,gaibu_debug_msg,RunNumber);
+    gaibu_msg(LOG_CRIT,gaibu_debug_msg,RunNumber);
     write_ebretval(-1);
     return 127;
   }
@@ -1650,7 +1653,7 @@ int main(int argc, char **argv)
     if((int)difftime(time(0),timeout) > MAXTIME) {
       sprintf(gaibu_debug_msg,
         "Error: Baseline data not found in the last %d seconds.",MAXTIME);
-      gaibu_msg(MEXCEPTION,gaibu_debug_msg,RunNumber);
+      gaibu_msg(LOG_CRIT,gaibu_debug_msg,RunNumber);
       write_ebretval(-1);
       return 127;
     }
@@ -1673,7 +1676,7 @@ int main(int argc, char **argv)
     if((int)difftime(time(0),timeout) > MAXTIME) {
       sprintf(gaibu_debug_msg,
         "Error: Binary data not found in the last %d seconds.",MAXTIME);
-      gaibu_msg(MEXCEPTION,gaibu_debug_msg,RunNumber);
+      gaibu_msg(LOG_CRIT,gaibu_debug_msg,RunNumber);
       write_ebretval(-1);
       return 127;
     }
@@ -1705,7 +1708,7 @@ int main(int argc, char **argv)
                 sprintf(gaibu_debug_msg,"No data found for %d seconds!  "
                     "Closing run %s without finding stop time on MySQL",
                     MAXTIME, RunNumber.c_str());
-                gaibu_msg(MERROR,gaibu_debug_msg,RunNumber);
+                gaibu_msg(LOG_ERR,gaibu_debug_msg,RunNumber);
               } else {
                 sprintf(gaibu_debug_msg,
                   "OV Event Builder has finished processing run %s",RunNumber.c_str());
@@ -1753,7 +1756,7 @@ int main(int argc, char **argv)
 
           while(rename(OVUSBStream[i].GetFileName(),tempfilename.c_str())) {
             sprintf(gaibu_debug_msg,"Could not rename binary data file.");
-            gaibu_msg(MERROR,gaibu_debug_msg);
+            gaibu_msg(LOG_ERR,gaibu_debug_msg);
             sleep(1);
           }
         }
@@ -1839,7 +1842,7 @@ int main(int argc, char **argv)
       if(cl<0) {
         sprintf(gaibu_debug_msg,
           "Fatal Error: Could not close output data file in recovery mode!");
-        gaibu_msg(MERROR,gaibu_debug_msg,RunNumber);
+        gaibu_msg(LOG_ERR,gaibu_debug_msg,RunNumber);
         write_ebretval(-1);
         return 127;
       }
@@ -1850,7 +1853,7 @@ int main(int argc, char **argv)
         int cl = close(dataFile);
         if(cl<0) {
           sprintf(gaibu_debug_msg,"Fatal Error: Could not close output data file!");
-          gaibu_msg(MEXCEPTION,gaibu_debug_msg,RunNumber);
+          gaibu_msg(LOG_CRIT,gaibu_debug_msg,RunNumber);
           write_ebretval(-1);
           return 127;
         }
@@ -1858,7 +1861,7 @@ int main(int argc, char **argv)
           while(!write_summary_table(OVUSBStream[0].GetTOLUTC(),
                                      SubRunCounter/timestampsperoutput)) {
             sprintf(gaibu_debug_msg,"Error writing to OV_runsummary table.");
-            gaibu_msg(MNOTICE,gaibu_debug_msg);
+            gaibu_msg(LOG_NOTICE,gaibu_debug_msg);
             sleep(1);
           }
         }

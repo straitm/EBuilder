@@ -5,12 +5,6 @@
 #include <string>
 
 #define BUFSIZE   1024
-#define MNAME            -1
-#define MINSTRUCTION      1
-#define MNOTICE           2
-#define MWARNING          3
-#define MERROR            4
-#define MEXCEPTION        5
 
 //get the configuration from the DCSpaceIP.config file --
 // read IP configuration from file
