@@ -11,42 +11,6 @@
 static char val[BUFSIZE];
 static char gaibu_debug_msg[BUFSIZE];
 
-// system call to send mail using mailx and ebuilder_notify.sh sript in DCOV/tools
-static void send_mail(int priority, char *gaibu_buf, int run_num = 9999999)
-{
-  //Email format:
-  // Sub: Process Name - Error level
-  // Body:
-  // date
-  // time
-  // RunNumber if present
-  // Error Level
-  // Message
-
-  char mail_message[BUFSIZE];
-  char mail_command[BUFSIZE];
-
-  time_t rawtime;
-  struct tm * timeinfo;
-  time(&rawtime);
-  timeinfo = localtime ( &rawtime );
-
-  sprintf(mail_message,"%.4d%.2d%.2d\n%.2d:%.2d:%.2d\n%.7d\nOV EBuilder\n%s",
-      1900+timeinfo->tm_year,
-      (1+timeinfo->tm_mon),
-      timeinfo->tm_mday,
-      timeinfo->tm_hour,
-      timeinfo->tm_min,
-      timeinfo->tm_sec,
-      run_num,
-      gaibu_buf);
-
-  // XXX this is not going to work outside of Double Chooz
-  sprintf(mail_command,". %s/DCOV/tools/ebuilder_notify.sh %d '%s'",
-          getenv("DCONLINE_PATH"),priority,mail_message);
-  system(mail_command);
-}
-
 char* config_string(const char* path, const char* key)
 {
   char ch[300];
@@ -84,26 +48,14 @@ char* config_string(const char* path, const char* key)
   return NULL;
 }
 
-// Print message and write to the syslog
+// Print message and write to the syslog if sufficiently important
 void gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber)
 {
-  char gaibu_msg_buf[BUFSIZE];
+  printf("%s\n", gaibu_buf);
 
-  // XXX looks like there's no overflow protection
-  sprintf(gaibu_msg_buf,"%d %s\n",priority,gaibu_buf);
-
-  printf(gaibu_msg_buf);
-
-  if(priority == LOG_NOTICE || priority == LOG_WARNING || priority == LOG_ERR){
-    syslog(priority, gaibu_msg_buf);
-  }
-  else if(priority == LOG_CRIT || priority == LOG_ALERT || priority == LOG_EMERG){
-    syslog(priority, gaibu_msg_buf);
-    if(myRunNumber.empty())
-      send_mail(priority,gaibu_buf);
-    else
-      send_mail(priority,gaibu_buf,atoi(myRunNumber.c_str()));
-  }
+  if(priority == LOG_NOTICE || priority == LOG_WARNING || priority == LOG_ERR ||
+     priority == LOG_CRIT   || priority == LOG_ALERT   || priority == LOG_EMERG)
+    syslog(priority, gaibu_buf);
 }
 
 bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew)
@@ -135,7 +87,7 @@ void start_gaibu()
 {
   openlog("OV EBuilder", LOG_NDELAY, LOG_USER);
 
-  sprintf(gaibu_debug_msg,"OV Event Builder Started");
+  gaibu_msg(LOG_NOTICE, "OV Event Builder Started");
 }
 
 int GetDir(std::string dir, std::vector<std::string> &myfiles,
