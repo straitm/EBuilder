@@ -856,8 +856,17 @@ static bool write_ebsummary()
   return true;
 }
 
-// XXX this function is 600 lines long and does not have documented goals/outputs.
-static bool read_summary_table()
+static void die_in_read_summary_table(const char * const format, ...)
+{
+  va_list ap;
+  va_start(ap, format);
+  log_msg(LOG_CRIT,format, ap);
+  write_ebretval(-1);
+  exit(127);
+}
+
+// XXX this function is 450 lines long and does not have documented goals/outputs.
+static void read_summary_table()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
@@ -872,11 +881,9 @@ static bool read_summary_table()
   sprintf(password,"%s",config_string(DCDatabase_path,"DCDB_OV_PASSWORD"));
   sprintf(database,"%s",config_string(DCDatabase_path,"DCDB_OV_DBNAME"));
 
-  if(!myconn.connect(database, server, username, password)) {
-    log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
+  if(!myconn.connect(database, server, username, password))
+    die_in_read_summary_table("Cannot connect to MySQL database %s at %s\n",
       database,server);
-    return false;
-  }
 
   //////////////////////////////////////////////////////////////////////
   // Get mysql config table name
@@ -885,20 +892,17 @@ static bool read_summary_table()
     "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
   mysqlpp::Query query2 = myconn.query(query_string);
   res = query2.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "Found no matching entry for run %s in OV_runsummary\n",
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("Found no matching entry for run %s in OV_runsummary\n",
       RunNumber.c_str());
-    myconn.disconnect();
-    return false;
-  }
-  else if(res.num_rows() > 1) {
+
+  if(res.num_rows() > 1)
     log_msg(LOG_WARNING, "Found more than one entry for run %s "
       "in OV_runsummary. Using most recent entry.\n",RunNumber.c_str());
-  }
-  else {
+  else
     log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
       RunNumber.c_str());
-  }
+
   char config_table[BUFSIZE];
   strcpy(config_table,res[0][1].c_str());
 
@@ -908,15 +912,11 @@ static bool read_summary_table()
     config_table);
   mysqlpp::Query query3 = myconn.query(query_string);
   res=query3.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query3.error());
-    myconn.disconnect();
-    return false;
-  }
-  else {
-    log_msg(LOG_INFO,"Found %ld distinct USBs in table %s\n",
-            (long int)res.num_rows(),config_table);
-  }
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+      query_string,query3.error());
+  log_msg(LOG_INFO,"Found %ld distinct USBs in table %s\n",
+          (long int)res.num_rows(),config_table);
   numUSB = (long int)res.num_rows();
 
   map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
@@ -931,26 +931,22 @@ static bool read_summary_table()
     "WHERE HV != -999 ORDER BY USB_serial;", config_table);
   mysqlpp::Query query4 = myconn.query(query_string);
   res=query4.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query4.error());
-    myconn.disconnect();
-    return false;
-  }
-  else {
-    log_msg(LOG_INFO,"Found %ld distinct non-Fan-in USBs in table %s\n",
-            (long int)res.num_rows(),config_table);
-  }
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+      query_string,query4.error());
+  log_msg(LOG_INFO,"Found %ld distinct non-Fan-in USBs in table %s\n",
+          (long int)res.num_rows(),config_table);
   numFanUSB = numUSB - res.num_rows();
-  for(int i = 0; i<numUSB-numFanUSB; i++) {
+  for(int i = 0; i<numUSB-numFanUSB; i++)
     Datamap[i] = USBmap[atoi(res[i][0])];
-  }
+
   // Identify Fan-in USBs -- FixME is this needed?
   map<int,int>::iterator USBmapIt,DatamapIt;
   for(USBmapIt = USBmap.begin(); USBmapIt!=USBmap.end(); USBmapIt++) {
     bool PMTUSBFound = false;
-    for(DatamapIt = Datamap.begin(); DatamapIt!=Datamap.end(); DatamapIt++) {
-      if(USBmapIt->second == DatamapIt->second) PMTUSBFound = true;
-    }
+    for(DatamapIt = Datamap.begin(); DatamapIt!=Datamap.end(); DatamapIt++)
+      if(USBmapIt->second == DatamapIt->second)
+        PMTUSBFound = true;
     if(!PMTUSBFound) {
       OVUSBStream[USBmapIt->second].SetIsFanUSB();
       log_msg(LOG_INFO,"USB %d identified as Fan-in USB\n",USBmapIt->first);
@@ -963,14 +959,11 @@ static bool read_summary_table()
     config_table);
   mysqlpp::Query query45 = myconn.query(query_string);
   res=query45.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query45.error());
-    myconn.disconnect();
-    return false;
-  }
-  else {
-    log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
-  }
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+      query_string,query45.error());
+  log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
+
   // Create map of UBS_serial to array of pmt board offsets
   for(int i = 0; i<(int)res.num_rows(); i++) {
     if(!pmtoffsets.count(atoi(res[i][0])))
@@ -989,32 +982,28 @@ static bool read_summary_table()
   sprintf(query_string,"SELECT DISTINCT pmtboard_u FROM %s;",config_table);
   mysqlpp::Query query5 = myconn.query(query_string);
   res=query5.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query5.error());
-    myconn.disconnect();
-    return false;
-  }
-  else {
-    log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
-            (long int)res.num_rows(),config_table);
-  }
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+      query_string,query5.error());
+  log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
+          (long int)res.num_rows(),config_table);
+
   const int totalboards = res.num_rows();
 
-  // New function establishes overflow array
-  int max = 0; int pmtnum;
-  for(int i = 0; i<(int)res.num_rows(); i++) {
-    pmtnum = atoi(res[i][0]);
-    if(pmtnum > max) max = pmtnum;
-  }
-  log_msg(LOG_INFO,"Found max PMT board number %d in table %s\n",max,config_table);
+  {
+    int max = 0, pmtnum = 0;
+    for(int i = 0; i<(int)res.num_rows(); i++) {
+      pmtnum = atoi(res[i][0]);
+      if(pmtnum > max) max = pmtnum;
+    }
+    log_msg(LOG_INFO,"Found max PMT board number %d in table %s\n",max,config_table);
 
-  overflow = new bool[max+1];
-  maxcount_16ns_hi = new long int[max+1];
-  maxcount_16ns_lo = new long int[max+1];
-  for(int i = 0; i<max+1; i++) {
-    overflow[i] = false;
-    maxcount_16ns_hi[i] = 0;
-    maxcount_16ns_lo[i] = 0;
+    overflow = new bool[max+1];
+    maxcount_16ns_hi = new long int[max+1];
+    maxcount_16ns_lo = new long int[max+1];
+    memset(overflow, 0, (max+1)*sizeof(bool));
+    memset(maxcount_16ns_hi, 0, (max+1)*sizeof(long int));
+    memset(maxcount_16ns_lo, 0, (max+1)*sizeof(long int));
   }
 
   //////////////////////////////////////////////////////////////////////
@@ -1023,25 +1012,19 @@ static bool read_summary_table()
     config_table);
   mysqlpp::Query query6 = myconn.query(query_string);
   res=query6.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query3.error());
-    myconn.disconnect();
-    return false;
-  }
-  else {
-    log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
-            (long int)res.num_rows(),config_table);
-  }
-  if((int)res.num_rows() != totalboards) { // config table has duplicate entries
-    log_msg(LOG_WARNING, "Found duplicate pmtboard_u entries in table %s\n",
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+      query_string,query3.error());
+  log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
+          (long int)res.num_rows(),config_table);
+
+  if((int)res.num_rows() != totalboards) // config table has duplicate entries
+    die_in_read_summary_table("Found duplicate pmtboard_u entries in table %s\n",
             config_table);
-    myconn.disconnect();
-    return false;
-  }
-  for(int i = 0; i<(int)res.num_rows(); i++) {
-    // This is a temporary internal mapping used only by the EBuilder
+
+  // This is a temporary internal mapping used only by the EBuilder
+  for(int i = 0; i<(int)res.num_rows(); i++)
     PMTUniqueMap[1000*atoi(res[i][1])+atoi(res[i][2])] = atoi(res[i][3]);
-  }
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
@@ -1051,28 +1034,21 @@ static bool read_summary_table()
     RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query.error());
-    myconn.disconnect();
-    return false;
-  }
-  else if(res.num_rows() > 1) { // Check that OVRunType is the same?
+  if(res.num_rows() < 1)
+    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+      query_string,query.error());
+  if(res.num_rows() > 1) // Check that OVRunType is the same
     log_msg(LOG_WARNING, "Found more than one entry for run %s in "
       "OV_runsummary. Using most recent entry\n",RunNumber.c_str());
-  }
-  else {
+  else
     log_msg(LOG_INFO,"Found MySQL run summary entry for run: %s\n",
             RunNumber.c_str());
-  }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set the Data Folder and Ouput Dir
-  if(OVRunType.compare(res[0][1].c_str()) != 0) {
-    log_msg(LOG_ERR, "MySQL Run Type: %s does not match command line Run Type: %s\n",
-            res[0][1].c_str(),OVRunType.c_str());
-    myconn.disconnect();
-    return false;
-  }
+  if(OVRunType.compare(res[0][1].c_str()) != 0)
+    die_in_read_summary_table("MySQL Run Type: %s does not match command line "
+      "Run Type: %s\n", res[0][1].c_str(),OVRunType.c_str());
 
   char tmpoutdir[BUFSIZE];
   if(OVRunType.compare("P") == 0) {
@@ -1092,18 +1068,13 @@ static bool read_summary_table()
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Locate OV binary data
-  if(atoi(res[0][5]) == 1 || atoi(res[0][5]) == 2) { // Data Disk
-    Disk = atoi(res[0][5]);
-    char inpath[BUFSIZE]; // Assign output folder based on disk number
-    sprintf(inpath,"/%s/data%d/%s",OVDAQHost.c_str(),Disk,DataFolder.c_str());
-    DataFolder = inpath;
-  }
-  else {
-    log_msg(LOG_ERR, "MySQL query error: could not retrieve "
+  if(atoi(res[0][5]) != 1 && atoi(res[0][5]) != 2) // Data Disk
+    die_in_read_summary_table("MySQL query error: could not retrieve "
       "data disk for Run: %s\n",RunNumber.c_str());
-    myconn.disconnect();
-    return false;
-  }
+  Disk = atoi(res[0][5]);
+  char inpath[BUFSIZE]; // Assign output folder based on disk number
+  sprintf(inpath,"/%s/data%d/%s",OVDAQHost.c_str(),Disk,DataFolder.c_str());
+  DataFolder = inpath;
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
@@ -1114,11 +1085,9 @@ static bool read_summary_table()
   if(!res[0][6].is_null()) { // EBcomment filled each successful write attempt
     // False if non-baseline files are found
     if(GetDir(binary_dir, initial_files, 0, 0)) {
-      if(errno) {
-        log_msg(LOG_ERR,"Error(%d) opening directory %s\n",errno,binary_dir.c_str());
-        myconn.disconnect();
-        return false;
-      }
+      if(errno)
+        die_in_read_summary_table("Error(%d) opening directory %s\n",
+          errno,binary_dir.c_str());
       if(!res[0][8].is_null()) { // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
       }
@@ -1138,36 +1107,26 @@ static bool read_summary_table()
   // Sanity check for each run mode
   // Check if original run already used these parameters. No reprocess.
   if(EBRunMode == kReprocess) {
-    if(atoi(res[0][2]) == Threshold && (TriggerMode)atoi(res[0][3]) == EBTrigMode) {
-      log_msg(LOG_ERR, "MySQL running parameters match "
+    if(atoi(res[0][2]) == Threshold && (TriggerMode)atoi(res[0][3]) == EBTrigMode)
+      die_in_read_summary_table("MySQL running parameters match "
         "reprocessing parameters. Threshold: %04d\tTrigger type: %01d\n",
         Threshold, (int)EBTrigMode);
-      myconn.disconnect();
-      return false;
-    }
   }
   else if(EBRunMode == kRecovery) { // Check consistency of run parameters
     if(res[0][1].c_str() != OVRunType ||
        atoi(res[0][2]) != Threshold ||
-       atoi(res[0][3]) != (int)EBTrigMode) {
-      log_msg(LOG_ERR, "MySQL parameters do not match recovery "
+       atoi(res[0][3]) != (int)EBTrigMode)
+      die_in_read_summary_table("MySQL parameters do not match recovery "
         "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d\n",
         OVRunType.c_str(),Threshold, (int)EBTrigMode);
-      myconn.disconnect();
-      return false;
-    }
     if(!res[0][7].is_null()) SubRunCounter = timestampsperoutput*atoi(res[0][7]);
-
   }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Get EBuilder parameters from MySQL database
   if(EBRunMode != kReprocess) {
-    if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) { // Sanity check
-      log_msg(LOG_ERR, "Invalid EBTrigMode: %01d\n",EBTrigMode);
-      myconn.disconnect();
-      return false;
-    }
+    if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) // Sanity check
+      die_in_read_summary_table("Invalid EBTrigMode: %01d\n",EBTrigMode);
 
     if(EBTrigMode != (TriggerMode)atoi(res[0][3]))
       log_msg(LOG_WARNING, "Trigger Mode requested (%d) will "
@@ -1183,7 +1142,6 @@ static bool read_summary_table()
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Connect to EBuilder MySQL table
   if(EBRunMode == kReprocess) {
-
     umask(0);
     char tempfolder[BUFSIZE];
 
@@ -1192,30 +1150,20 @@ static bool read_summary_table()
     mysqlpp::Query query2 = myconn.query(query_string);
     mysqlpp::StoreQueryResult res2 = query2.store();
 
-    if(res2.num_rows() == 0) { // Can't find run in OV_ebuilder
-      log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query2.error());
+    if(res2.num_rows() == 0) // Can't find run in OV_ebuilder
+      die_in_read_summary_table("MySQL query (%s) error: %s\n"
+        "EBuilder did not finish processing run %s. Run recovery mode first.\n",
+        query_string,query2.error(),RunNumber.c_str());
 
-      log_msg(LOG_ERR, "EBuilder did not finish processing run "
-        "%s. Run recovery mode first.\n",RunNumber.c_str());
-
-      myconn.disconnect();
-      return false;
-    }
-    else if(res2.num_rows() == 1) { // Run has never been reprocessed
-
+    if(res2.num_rows() == 1) { // Run has never been reprocessed
       sprintf(tempfolder,"%sREP/Run_%s",OutputDir.c_str(),RunNumber.c_str());
       OutputFolder = tempfolder;
       if(mkdir(OutputFolder.c_str(), 0777)) {
-        if(errno != EEXIST) {
-          log_msg(LOG_ERR, "Error (%d) creating output folder %s\n",
+        if(errno != EEXIST)
+          die_in_read_summary_table("Error (%d) creating output folder %s\n",
                   errno,OutputFolder.c_str());
-          myconn.disconnect();
-          return false;
-        }
-        else {
-          log_msg(LOG_WARNING, "Output folder %s already exists.\n",
-                  OutputFolder.c_str());
-        }
+        log_msg(LOG_WARNING, "Output folder %s already exists.\n",
+                OutputFolder.c_str());
       }
     }
 
@@ -1242,51 +1190,33 @@ static bool read_summary_table()
       vector<string> old_files;
       string tempfile;
       string tempdir = Path + "Run_" + RunNumber + "/processed";
-      if(GetDir(tempdir, old_files, 1)) {
-        if(errno) {
-          log_msg(LOG_ERR, "Error(%d) opening directory %s\n",
+      if(GetDir(tempdir, old_files, 1))
+        if(errno)
+          die_in_read_summary_table("Error(%d) opening directory %s\n",
                   errno,tempdir.c_str());
-          myconn.disconnect();
-          return false;
-        }
-      }
+
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
-        if(remove(tempfile.c_str())) {
-          log_msg(LOG_ERR, "Error deleting file %s\n",tempfile.c_str());
-          myconn.disconnect();
-          return false;
-        }
+        if(remove(tempfile.c_str()))
+          die_in_read_summary_table("Error deleting file %s\n",tempfile.c_str());
       }
-      if(rmdir(tempdir.c_str())) {
-        log_msg(LOG_ERR, "Error deleting folder %s\n",tempdir.c_str());
-        myconn.disconnect();
-        return false;
-      }
+      if(rmdir(tempdir.c_str()))
+        die_in_read_summary_table("Error deleting folder %s\n",tempdir.c_str());
       old_files.clear();
 
       tempdir = Path + "Run_" + RunNumber;
-      if(GetDir(tempdir, old_files, 1)) {
-        if(errno) {
-          log_msg(LOG_ERR, "Error(%d) opening directory %s\n",
+      if(GetDir(tempdir, old_files, 1))
+        if(errno)
+          die_in_read_summary_table("Error(%d) opening directory %s\n",
                   errno,tempdir.c_str());
-          myconn.disconnect();
-          return false;
-        }
-      }
+
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
-        if(remove(tempfile.c_str())) {
-          log_msg(LOG_ERR, "Error deleting file %s\n",tempfile.c_str());
-          myconn.disconnect();
-          return false;
-        }
+        if(remove(tempfile.c_str()))
+          die_in_read_summary_table("Error deleting file %s\n",tempfile.c_str());
       }
-      if(rmdir(tempdir.c_str())) {
-        log_msg(LOG_ERR, "Error deleting folder %s\n",tempdir.c_str());
-        myconn.disconnect();
-        return false;
-      }
+      if(rmdir(tempdir.c_str()))
+        die_in_read_summary_table("Error deleting folder %s\n",tempdir.c_str());
     }
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1295,20 +1225,16 @@ static bool read_summary_table()
             OutputDir.c_str(),RunNumber.c_str(),(int)EBTrigMode,Threshold,Res1,Res2);
     OutputFolder = tempfolder;
     if(mkdir(OutputFolder.c_str(), 0777)) {
-      if(errno != EEXIST) {
-        log_msg(LOG_ERR, "Error (%d) creating output folder %s\n",
+      if(errno != EEXIST)
+        die_in_read_summary_table("Error (%d) creating output folder %s\n",
                 errno,OutputFolder.c_str());
-        myconn.disconnect();
-        return false;
-      }
-      else {
-        log_msg(LOG_WARNING, "Output folder %s already exists.\n",
-          OutputFolder.c_str());
-      }
+      log_msg(LOG_WARNING, "Output folder %s already exists.\n",
+        OutputFolder.c_str());
     }
   }
 
-  if(!Repeat && !write_ebsummary()) return false;
+  if(!Repeat && !write_ebsummary())
+    die_in_read_summary_table("!Repeat && !write_ebsummary\n");
 
   if(EBRunMode != kNormal) {
 
@@ -1320,16 +1246,11 @@ static bool read_summary_table()
 
     initial_files.clear();
     if(GetDir(decoded_dir, initial_files, 1)) {
-      if(errno) {
-        log_msg(LOG_ERR, "Error(%d) opening directory %s\n",
+      if(errno)
+        die_in_read_summary_table("Error (%d) opening directory %s\n",
                 errno,decoded_dir.c_str());
-        myconn.disconnect();
-        return false;
-      }
-      log_msg(LOG_ERR, "No decoded files found in directory %s\n",
+      die_in_read_summary_table("No decoded files found in directory %s\n",
         decoded_dir.c_str());
-      myconn.disconnect();
-      return false;
     }
     sort(initial_files.begin(),initial_files.end());
 
@@ -1337,11 +1258,8 @@ static bool read_summary_table()
     // Determine files to rename
     vector<string>::iterator fname_begin=initial_files.begin();
     string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
-    if(fname_begin->find(fdelim) == fname_begin->npos) {
-      log_msg(LOG_WARNING, "Error: Cannot find '_' in file name\n");
-      myconn.disconnect();
-      return false;
-    }
+    if(fname_begin->find(fdelim) == fname_begin->npos)
+      die_in_read_summary_table("Error: Cannot find '_' in file name\n");
     size_t fname_it_delim = fname_begin->find(fdelim);
 
     vector<string> myfiles[maxUSB];
@@ -1395,20 +1313,17 @@ static bool read_summary_table()
         rn_error = 1;
       if(!rn_error) {
         while(rename(files_to_rename[i].c_str(),tempfname.c_str())) {
-            log_msg(LOG_ERR,"Could not rename decoded data file.\n");
-            sleep(1);
-          }
+          log_msg(LOG_ERR,"Could not rename decoded data file.\n");
+          sleep(1);
+        }
       }
       else {
-        log_msg(LOG_ERR,"Unexpected decoded data file name: %s\n",
+        die_in_read_summary_table("Unexpected decoded data file name: %s\n",
           tempfname.c_str());
-        myconn.disconnect();
-        return false;
       }
     }
   }
   myconn.disconnect();
-  return true;
 }
 
 static bool write_summary_table(long int lasttime, int subrun)
@@ -1527,12 +1442,8 @@ int main(int argc, char **argv)
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load OV run_summary table
-  // This should handle reprocessing eventually
-  if(!read_summary_table()) {
-    log_msg(LOG_CRIT,"Fatal Error while loading OV_runsummary table.\n");
-    write_ebretval(-1);
-    return 127;
-  }
+  // This should handle reprocessing eventually <-- relevant for CRT?
+  read_summary_table();
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load baseline data
