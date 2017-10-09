@@ -11,40 +11,33 @@
 
 char* config_string(const char* path, const char* key)
 {
-  char ch[300];
-  char name[200];
-
-  char IP[200];
-  char port[200];
-
-  FILE * file;
-  file = fopen(path,"r");
-  if (file != NULL) {
-    while( fgets( ch, 120, file ) != NULL ) {
-      static char val[BUFSIZE];
-
-      if (sscanf(ch, "%s :%s", name, IP) == 2) { // get IP/hostname
-        if (  strcmp(name, key) == 0 ) {
-          sprintf(val,IP);
-          fclose(file);
-          return val;
-        }
-      }
-      else if (sscanf(ch, "%s %s", name, port) == 2){ // get port number
-        if ( strcmp(name, key) == 0 ) {
-          sprintf(val,port);
-          fclose(file);
-          return val;
-        }
-      }
-
-    }
-    fclose(file);
-  }
-  else {
+  FILE * file = fopen(path,"r");
+  if (file == NULL) {
     printf("Unable to open file %s\n",path);
     exit(1);
   }
+
+  char ch[300];
+  while(fgets(ch, 120, file) != NULL){
+    char name[200];
+    static char IP[200];
+    static char port[200];
+    if (sscanf(ch, "%s :%s", name, IP) == 2) { // get IP/hostname
+      if(strcmp(name, key) == 0){
+        fclose(file);
+        return IP;
+      }
+    }
+    else if (sscanf(ch, "%s %s", name, port) == 2){ // get port number
+      if ( strcmp(name, key) == 0 ) {
+        fclose(file);
+        return port;
+      }
+    }
+
+  }
+  fclose(file);
+
   return NULL;
 }
 

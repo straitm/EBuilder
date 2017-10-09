@@ -12,6 +12,8 @@
 #include <sys/statvfs.h>
 #include <mysql++.h>
 
+#define BUFSIZE 1024
+
 using namespace std;
 
 static const int maxUSB=10; // Maximum number of USB streams
@@ -83,18 +85,17 @@ static bool write_ebretval(const int val)
     return false;
   }
 
-  char insert_base[BUFSIZE] = "SELECT Run_number FROM OV_runsummary WHERE ";
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"%s Run_number = '%s';", insert_base,RunNumber.c_str());
+  sprintf(query_string,"SELECT Run_number FROM OV_runsummary WHERE Run_number = '%s';",
+    RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
 
   if(res.num_rows() == 1) {  // Run has never been reprocessed with this configuration
 
-    char insert_base2[BUFSIZE] = "Update OV_runsummary set EBretval = ";
-    sprintf(query_string,"%s '%d' where Run_number = '%s';",
-            insert_base2,val,RunNumber.c_str());
+    sprintf(query_string,"Update OV_runsummary set EBretval = '%d' "
+      "where Run_number = '%s';", val,RunNumber.c_str());
 
     mysqlpp::Query query2 = myconn.query(query_string);
     if(!query2.execute()) {
@@ -649,8 +650,6 @@ static bool WriteBaselineTable(int **baseptr, int usb)
     return false;
   }
 
-  char insert_base[BUFSIZE] = "INSERT INTO OV_pedestal";
-
   char query_string[BUFSIZE];
 
   time_t rawtime;
@@ -682,7 +681,7 @@ static bool WriteBaselineTable(int **baseptr, int usb)
 
         if(j==numChannels-1) { // last baseline value has been inserted
 
-          sprintf(query_string,"%s VALUES ('%s','%s','%s',''%s);",insert_base,
+          sprintf(query_string,"INSERT INTO OV_pedestal VALUES ('%s','%s','%s',''%s);",
                   RunNumber.c_str(),mydate,mytime,baseline_values.c_str());
 
           mysqlpp::Query query = myconn.query(query_string);
@@ -829,21 +828,19 @@ static bool write_ebsummary()
     return false;
   }
 
-  char insert_base[BUFSIZE] = "SELECT Path FROM OV_ebuilder WHERE ";
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"%s Run_number = '%s', SW_Threshold = '%04d', "
+  sprintf(query_string,"SELECT Path FROM OV_ebuilder "
+    "WHERE Run_number = '%s', SW_Threshold = '%04d', "
     "SW_TriggerMode = '%01d', Res1 = '%02d', Res2 = '%02d';",
-    insert_base,RunNumber.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
+    RunNumber.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
 
   if(res.num_rows() == 0) {  // Run has never been reprocessed with this configuration
-
-    char insert_base2[BUFSIZE] = "INSERT INTO OV_ebuilder";
-    sprintf(query_string,"%s (%s,%s,%s,%s,%s,%s) VALUES "
+    sprintf(query_string,"INSERT INTO OV_ebuilder (%s,%s,%s,%s,%s,%s) VALUES "
       "('%s','%s','%04d','%01d','%02d','%02d');",
-      insert_base2,"Run_number","Path","SW_Threshold","SW_TriggerMode","Res1","Res2",
+      "Run_number","Path","SW_Threshold","SW_TriggerMode","Res1","Res2",
       RunNumber.c_str(),OutputFolder.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
 
     mysqlpp::Query query2 = myconn.query(query_string);
@@ -883,10 +880,9 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Get mysql config table name
-  char insert_base[BUFSIZE] =
-    "SELECT Run_number,config_table FROM OV_runsummary WHERE Run_number = ";
   char query_string[BUFSIZE];
-  sprintf(query_string,"%s'%s' ORDER BY start_time DESC;",insert_base,RunNumber.c_str());
+  sprintf(query_string,"SELECT Run_number,config_table FROM OV_runsummary "
+    "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
   mysqlpp::Query query2 = myconn.query(query_string);
   res = query2.store();
   if(res.num_rows() < 1) {
@@ -908,8 +904,8 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Count number of distinct USBs
-  strcpy(insert_base,"SELECT DISTINCT USB_serial FROM ");
-  sprintf(query_string,"%s%s ORDER BY USB_serial;",insert_base,config_table);
+  sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s ORDER BY USB_serial;",
+    config_table);
   mysqlpp::Query query3 = myconn.query(query_string);
   res=query3.store();
   if(res.num_rows() < 1) {
@@ -931,9 +927,8 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Count number of non fan-in USBs
-  strcpy(insert_base,"SELECT DISTINCT USB_serial FROM ");
-  sprintf(query_string,"%s%s WHERE HV != -999 ORDER BY USB_serial;",
-          insert_base,config_table);
+  sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s "
+    "WHERE HV != -999 ORDER BY USB_serial;", config_table);
   mysqlpp::Query query4 = myconn.query(query_string);
   res=query4.store();
   if(res.num_rows() < 1) {
@@ -964,8 +959,8 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Load the offsets for these boards
-  strcpy(insert_base,"SELECT USB_serial, board_number, offset FROM ");
-  sprintf(query_string,"%s%s;",insert_base,config_table);
+  sprintf(query_string,"SELECT USB_serial, board_number, offset FROM %s;",
+    config_table);
   mysqlpp::Query query45 = myconn.query(query_string);
   res=query45.store();
   if(res.num_rows() < 1) {
@@ -991,8 +986,7 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Count the number of boards in this setup
-  strcpy(insert_base,"SELECT DISTINCT pmtboard_u FROM ");
-  sprintf(query_string,"%s%s;",insert_base,config_table);
+  sprintf(query_string,"SELECT DISTINCT pmtboard_u FROM %s;",config_table);
   mysqlpp::Query query5 = myconn.query(query_string);
   res=query5.store();
   if(res.num_rows() < 1) {
@@ -1025,8 +1019,8 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Count the number of PMT and Fan-in boards in this setup
-  strcpy(insert_base,"SELECT HV, USB_serial, board_number, pmtboard_u FROM ");
-  sprintf(query_string,"%s%s;",insert_base,config_table);
+  sprintf(query_string,"SELECT HV, USB_serial, board_number, pmtboard_u FROM %s;",
+    config_table);
   mysqlpp::Query query6 = myconn.query(query_string);
   res=query6.store();
   if(res.num_rows() < 1) {
@@ -1051,10 +1045,10 @@ static bool read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
-  strcpy(insert_base,"SELECT Run_number,Run_Type,SW_Threshold,"
+  sprintf(query_string, "SELECT Run_number,Run_Type,SW_Threshold,"
     "SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,"
-    "stop_time FROM OV_runsummary where Run_number = ");
-  sprintf(query_string,"%s'%s' ORDER BY start_time DESC;",insert_base,RunNumber.c_str());
+    "stop_time FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
+    RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
   if(res.num_rows() < 1) {
@@ -1225,13 +1219,13 @@ static bool read_summary_table()
       }
     }
 
-    char insert_base2[BUFSIZE] = "SELECT Path,ENTRY FROM OV_ebuilder WHERE ";
     string Path = "";
 
-    sprintf(query_string,"%s Run_number = '%s' and SW_Threshold = "
-      "'%04d' and SW_TriggerMode = '%01d' and Res1 = '%02d' and Res2 "
-      "= '%02d' ORDER BY ENTRY;",
-            insert_base2,RunNumber.c_str(),Threshold,(int)EBTrigMode, Res1, Res2);
+    sprintf(query_string,"SELECT Path, ENTRY FROM OV_ebuilder "
+      "WHERE Run_number = '%s' and SW_Threshold = "
+      "'%04d' and SW_TriggerMode = '%01d' and Res1 = '%02d' and "
+      "Res2 = '%02d' ORDER BY ENTRY;",
+      RunNumber.c_str(),Threshold,(int)EBTrigMode, Res1, Res2);
     printf("query: %s\n",query_string);
     mysqlpp::Query query3 = myconn.query(query_string);
     mysqlpp::StoreQueryResult res3 = query3.store();
@@ -1428,11 +1422,11 @@ static bool write_summary_table(long int lasttime, int subrun)
     return false;
   }
 
-  char insert_base[BUFSIZE] = "UPDATE OV_runsummary SET EBcomment = ";
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"%s'%ld', EBsubrunnumber = '%d' WHERE Run_number "
-    "= '%s';",insert_base,lasttime,subrun,RunNumber.c_str());
+  sprintf(query_string,"UPDATE OV_runsummary SET EBcomment = '%ld', "
+    "EBsubrunnumber = '%d' WHERE Run_number = '%s';",
+    lasttime,subrun,RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   if(!query.execute()) {
     log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n",query_string,query.error());
@@ -1455,10 +1449,10 @@ static bool read_stop_time()
     return false;
   }
 
-  char insert_base[BUFSIZE] = "SELECT stop_time FROM OV_runsummary WHERE Run_number = ";
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"%s'%s' ORDER BY start_time DESC;",insert_base,RunNumber.c_str());
+  sprintf(query_string,"SELECT stop_time FROM OV_runsummary WHERE Run_number = '%s' "
+    "ORDER BY start_time DESC;",RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
   if(res.num_rows() < 1) {
