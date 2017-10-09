@@ -165,9 +165,7 @@ int USBstream::LoadFile(std::string nextfile)
         }
       }
       myFile->close(); delete myFile; // Clean up
-      char msg_buf[100];
-      sprintf(msg_buf,"USB %d has died. Exiting.",myusb);
-      gaibu_msg(LOG_ERR,msg_buf);
+      log_msg(LOG_ERR,"USB %d has died. Exiting.\n",myusb);
       return -1;
     }
     else {
@@ -240,9 +238,7 @@ bool USBstream::decode()
           }
         }
         else {
-          char msg_buf[100];
-          sprintf(msg_buf,"Found corrupted data in file %s",myfilename);
-          gaibu_msg(LOG_ERR,msg_buf);
+          log_msg(LOG_ERR,"Found corrupted data in file %s\n",myfilename);
           exp = 0;
         }
       }
@@ -448,8 +444,7 @@ void USBstream::check_data()
           data.erase(data.begin(),data.begin()+len+1); //(no longer)
         }
         else {
-          char gaibu_debug_msg[BUFSIZE];
-          sprintf(gaibu_debug_msg,"Found packet parity mismatch in USB stream %d",myusb);
+          log_msg(LOG_ERR,"Found packet parity mismatch in USB stream %d",myusb);
         }
         delete packet;
       }
@@ -537,10 +532,7 @@ void USBstream::flush_extra()
     extra.clear();
 
     // Ignore incomplete packets at the beginning of the run
-    if(!first_packet && mytolutc) {
-      char gaibu_debug_msg[BUFSIZE];
-      sprintf(gaibu_debug_msg,"Found x packet in file %s",myfilename);
-      gaibu_msg(LOG_NOTICE, gaibu_debug_msg);
-    }
+    if(!first_packet && mytolutc)
+      log_msg(LOG_NOTICE, "Found x packet in file %s\n",myfilename);
   }
 }

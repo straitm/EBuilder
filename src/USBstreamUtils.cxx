@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <iostream>
 #include <string.h>
 #include <netdb.h>
@@ -7,9 +8,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include "USBstreamUtils.h"
-
-static char val[BUFSIZE];
-static char gaibu_debug_msg[BUFSIZE];
 
 char* config_string(const char* path, const char* key)
 {
@@ -23,6 +21,8 @@ char* config_string(const char* path, const char* key)
   file = fopen(path,"r");
   if (file != NULL) {
     while( fgets( ch, 120, file ) != NULL ) {
+      static char val[BUFSIZE];
+
       if (sscanf(ch, "%s :%s", name, IP) == 2) { // get IP/hostname
         if (  strcmp(name, key) == 0 ) {
           sprintf(val,IP);
@@ -49,20 +49,21 @@ char* config_string(const char* path, const char* key)
 }
 
 // Print message and write to the syslog if sufficiently important
-void gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber)
+void log_msg(int priority, const char * const format, ...)
 {
-  printf("%s\n", gaibu_buf);
+  va_list ap;
+  va_start(ap, format);
+  vprintf(format, ap);
 
   if(priority == LOG_NOTICE || priority == LOG_WARNING || priority == LOG_ERR ||
      priority == LOG_CRIT   || priority == LOG_ALERT   || priority == LOG_EMERG)
-    syslog(priority, gaibu_buf);
+    vsyslog(priority, format, ap);
 }
 
 bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew)
 {
   if( lhs.size() < 7 || rhs.size() < 7) {
-    sprintf(gaibu_debug_msg,"Vector size error! Could not compare OV Hits");
-    gaibu_msg(LOG_ERR,gaibu_debug_msg);
+    log_msg(LOG_ERR,"Vector size error! Could not compare OV Hits\n");
     exit(1);
   }
 
@@ -83,11 +84,11 @@ bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew)
   return dt_16ns_low < -ClockSlew; // Order lo 16 bits of clock counter
 }
 
-void start_gaibu()
+void start_log()
 {
   openlog("OV EBuilder", LOG_NDELAY, LOG_USER);
 
-  gaibu_msg(LOG_NOTICE, "OV Event Builder Started");
+  log_msg(LOG_NOTICE, "OV Event Builder Started\n");
 }
 
 int GetDir(std::string dir, std::vector<std::string> &myfiles,

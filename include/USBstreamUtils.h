@@ -11,12 +11,12 @@
 
 char* config_string(const char* path, const char* key);
 
-// Send gaibu message and write to the syslog
-void gaibu_msg(int priority, char *gaibu_buf, std::string myRunNumber="");
+// Send message to screen and syslog
+void log_msg(int priority, const char * const format, ...);
 
 bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew=0);
 
-void start_gaibu();
+void start_log();
 
 int GetDir(std::string dir, std::vector<std::string> &myfiles,
            int opt = 0, int opt2 = 0);
