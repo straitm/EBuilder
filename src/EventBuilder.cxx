@@ -302,11 +302,10 @@ static int LoadAll(string dir)
   fname_it_delim = fname_begin->find(fdelim);
   string temp3;
   string fusb;
-  char *pEnd;
   for(int k = 0; k<numUSB; k++) {
     for(int j = k; j<(int)files.size(); j++) {
       fusb = (files[j]).substr(fname_it_delim+1,(files[j]).npos);
-      if(strtol(fusb.c_str(),&pEnd,10) == OVUSBStream[k].GetUSB()) {
+      if(strtol(fusb.c_str(),NULL,10) == OVUSBStream[k].GetUSB()) {
         temp3 = files[j];
         files[j] = files[k];
         files[k] = temp3;
@@ -334,7 +333,7 @@ static int LoadAll(string dir)
       return -1;
     }
     else { // Check to see that USB numbers are aligned
-      if(OVUSBStream[k].GetUSB() != strtol(fusb.c_str(),&pEnd,10)) {
+      if(OVUSBStream[k].GetUSB() != strtol(fusb.c_str(),NULL,10)) {
         log_msg(LOG_CRIT, "Fatal Error: USB number misalignment\n");
         return -1;
       }
@@ -744,10 +743,9 @@ static bool GetBaselines()
   vector<string>::iterator in_files_it=in_files.begin();
   string fusb;
   long int iusb;
-  char *pEnd;
   for(int i = 0; i<numUSB-numFanUSB; i++) {
     fusb = in_files_it->substr(in_files_it->find("_")+1,in_files_it->npos);
-    iusb = strtol(fusb.c_str(),&pEnd,10); // if the usb is in the list of non-fan-in usbs
+    iusb = strtol(fusb.c_str(),NULL,10); // if the usb is in the list of non-fan-in usbs
     // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
         log_msg(LOG_ERR, "Fatal Error: Found USB number "
@@ -1081,7 +1079,6 @@ static void read_summary_table()
   vector<string> initial_files;
   string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary/";
   string decoded_dir = DataFolder + "/Run_" + RunNumber + "/decoded/";
-  char *pEnd;
   if(!res[0][6].is_null()) { // EBcomment filled each successful write attempt
     // False if non-baseline files are found
     if(GetDir(binary_dir, initial_files, 0, 0)) {
@@ -1093,12 +1090,12 @@ static void read_summary_table()
       }
       else { // stop_time has not been filled. DAQ could be waiting in STARTED_S
         EBRunMode = kRecovery;
-        EBcomment = strtol(res[0][6].c_str(),&pEnd,10);
+        EBcomment = strtol(res[0][6].c_str(),NULL,10);
       }
     }
     else {
       EBRunMode = kRecovery;
-      EBcomment = strtol(res[0][6].c_str(),&pEnd,10);
+      EBcomment = strtol(res[0][6].c_str(),NULL,10);
     }
   }
   log_msg(LOG_INFO,"OV EBuilder Run Mode: %d\n",EBRunMode);
@@ -1265,12 +1262,11 @@ static void read_summary_table()
     vector<string> myfiles[maxUSB];
     map<int,int> mymap;
     string fusb;
-    char *pEnd;
     int iusb, mapindex;
     mapindex = 0;
     for(int k = 0; k<(int)initial_files.size(); k++) {
       fusb = (initial_files[k]).substr(fname_it_delim+1,2);
-      iusb = (int)strtol(fusb.c_str(),&pEnd,10);
+      iusb = (int)strtol(fusb.c_str(),NULL,10);
       if(!mymap.count(iusb)) mymap[iusb] = mapindex++;
       (myfiles[mymap[iusb]]).push_back(initial_files[k]);
     }
