@@ -534,7 +534,7 @@ static void BuildEvent(DataVector *OutDataVector,
   delete CurrHit;
 }
 
-static int check_options(int argc, char **argv)
+static int parse_options(int argc, char **argv)
 {
   bool show_help = false;
 
@@ -1410,7 +1410,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
 
 int main(int argc, char **argv)
 {
-  if(check_options(argc, argv) < 0) {
+  if(parse_options(argc, argv) < 0) {
     write_ebretval(-1);
     return 127;
   }
