@@ -790,19 +790,15 @@ static bool GetBaselines()
   DataVector *BaselineData = new DataVector;
   int usb = 0;
   for(int i = 0; i<numUSB-numFanUSB; i++) {
-    if(!OVUSBStream[Datamap[i]].GetBaselineData(BaselineData)){
+    OVUSBStream[Datamap[i]].GetBaselineData(BaselineData);
+    CalculatePedestal(BaselineData,baselines);
+    OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should I check for success here?
+    usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
+    if(!WriteBaselineTable(baselines,usb)) {
+      log_msg(LOG_ERR, "Fatal Error writing baseline table to MySQL database\n");
       return false;
     }
-    else {
-      CalculatePedestal(BaselineData,baselines);
-      OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should I check for success here?
-      usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
-      if(!WriteBaselineTable(baselines,usb)) {
-        log_msg(LOG_ERR, "Fatal Error writing baseline table to MySQL database\n");
-        return false;
-      }
-      BaselineData->clear();
-    }
+    BaselineData->clear();
   }
 
   for(int i = 0; i<maxModules; i++)

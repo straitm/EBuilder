@@ -31,7 +31,7 @@ public:
   unsigned long int GetTOLUTC() const { return mytolutc; }
 
   bool GetNextTimeStamp(DataVector *vec);
-  bool GetBaselineData(DataVector *vec);
+  void GetBaselineData(DataVector *vec);
   int LoadFile(std::string nextfile);
   bool decode();
 

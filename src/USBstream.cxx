@@ -89,18 +89,16 @@ void USBstream::SetBaseline(int **baseptr)
   }
 }
 
-bool USBstream::GetBaselineData(DataVector *vec)
+void USBstream::GetBaselineData(DataVector *vec)
 {
   vec->clear();
-  for(myit = myvec.begin(); myit != myvec.end(); myit++) {
-    if(myit->size() > 7) {
+  for(myit = myvec.begin(); myit != myvec.end(); myit++)
+    if(myit->size() > 7)
       vec->push_back(*myit);
-    }
-  }
+
   mytolutc = mytolsp = 0; // Reset mytolutc for data
   time_hi_1 = time_hi_2 = 0;
   time_lo_1 = time_lo_2 = 0;
-  return true;
 }
 
 bool USBstream::GetNextTimeStamp(DataVector *vec)
