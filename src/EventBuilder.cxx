@@ -12,10 +12,14 @@
 #include <sys/statvfs.h>
 #include <mysql++.h>
 
-#define BUFSIZE 1024
-
 using namespace std;
 
+#define BUFSIZE 1024
+
+enum RunMode {kNormal, kRecovery, kReprocess};
+enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
+
+// Consts
 static const int maxUSB=10; // Maximum number of USB streams
 static const int latency=5; // Seconds before DAQ switches files.
                             // FixME: 5 anticipated for far detector
@@ -26,54 +30,49 @@ static const int maxModules=64; // Maximum number of modules PER USB
 static const int MAXTIME=60; // Seconds before timeout looking for baselines
                              // and binary data
 static const int ENDTIME=5; // Number of seconds before time out at end of run
+static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
+                                                      // sync pulse at 62.5MHz
 
-// DC trigger system emits sync pulse at 62.5 MHz clock count = 2^29
-static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29;
-
-static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
+// Mutated as program runs
+static int OV_EB_State = 0;
+static bool finished=false; // Flag for joiner thread
 static TThread *gThreads[maxUSB]; // An array of threads to decode files
 static TThread *joinerThread; // Joiner thread for decoding
-static bool *overflow; // Keeps track of sync overflows for all boards
-
-static long int *maxcount_16ns_lo; // Keeps track of max clock count
-static long int *maxcount_16ns_hi; // for sync overflows for all boards
-
-static bool finished=false; // Flag for joiner thread
-
+static int initial_delay = 0;
 static vector<string> files; // vector to hold file names
-static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
-                             // USBs to all numerical ordering of all USBs
-static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
-                                  // to pmtboard_u in MySQL table
-static map<int,int*> pmtoffsets; // Map to hold offsets for each PMT board
 
-static string DataFolder; // Path to data hard-coded
-static string OutputFolder; // Default output data path hard-coded
+// Set in parse_options()
+static int Threshold = 73; //default 1.5 PE threshold
 static string RunNumber = "";
 static string OVRunType = "P";
 static string OVDAQHost = "dcfovdaq";
-static long int EBcomment = 0;
-static int SubRunCounter = 0;
-static int Disk=2; // default location of OV DAQ data: /data2
 static int OutDisk=1; // default output location of OV Ebuilder: /data1
-static int Threshold = 73; //default 1.5 PE threshold
-static int Res1 = 0;
-static int Res2 = 0;
-static bool Repeat = false;
-static int initial_delay = 0;
-static int OV_EB_State = 0;
-static int numUSB = 0;
-static int numFanUSB = 0;
+static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
+
+// Set in read_summary_table()
 static char server[BUFSIZE] = {0};
 static char username[BUFSIZE] = {0};
 static char password[BUFSIZE] = {0};
 static char database[BUFSIZE] = {0};
+static int numUSB = 0;
+static int numFanUSB = 0;
+static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
+                             // USBs to all numerical ordering of all USBs
+static map<int,int*> pmtoffsets; // Map to hold offsets for each PMT board
+static bool *overflow; // Keeps track of sync overflows for all boards
+static long int *maxcount_16ns_lo; // Keeps track of max clock count
+static long int *maxcount_16ns_hi; // for sync overflows for all boards
+static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
+                                  // to pmtboard_u in MySQL table
+static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
+static string DataFolder; // Path to data hard-coded
+static string OutputFolder; // Default output data path hard-coded
+static int Disk=2; // default location of OV DAQ data: /data2
+static long int EBcomment = 0;
+static int SubRunCounter = 0;
 
-enum RunMode {kNormal, kRecovery, kReprocess};
-enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
-
+// set in read_summary_table() and main()
 static RunMode EBRunMode = kNormal;
-static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
 static bool write_ebretval(const int val)
 {
