@@ -829,16 +829,16 @@ static bool write_ebsummary()
 
   sprintf(query_string,"SELECT Path FROM OV_ebuilder "
     "WHERE Run_number = '%s', SW_Threshold = '%04d', "
-    "SW_TriggerMode = '%01d', Res1 = '%02d', Res2 = '%02d';",
-    RunNumber.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
+    "SW_TriggerMode = '%01d', Res1 = '00', Res2 = '00';",
+    RunNumber.c_str(),Threshold,(int)EBTrigMode);
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
 
   if(res.num_rows() == 0) {  // Run has never been reprocessed with this configuration
-    sprintf(query_string,"INSERT INTO OV_ebuilder (%s,%s,%s,%s,%s,%s) VALUES "
-      "('%s','%s','%04d','%01d','%02d','%02d');",
-      "Run_number","Path","SW_Threshold","SW_TriggerMode","Res1","Res2",
-      RunNumber.c_str(),OutputFolder.c_str(),Threshold,(int)EBTrigMode,Res1,Res2);
+    sprintf(query_string,"INSERT INTO OV_ebuilder "
+      "(Run_number,Path,SW_Threshold,SW_TriggerMode,Res1,Res2) "
+      "VALUES ('%s','%s','%04d','%01d','00','00');",
+      RunNumber.c_str(),OutputFolder.c_str(),Threshold,(int)EBTrigMode);
 
     mysqlpp::Query query2 = myconn.query(query_string);
     if(!query2.execute()) {
@@ -1135,6 +1135,8 @@ static void read_summary_table()
     printf("Threshold: %d \t EBTrigMode: %d\n",Threshold,EBTrigMode);
   }
 
+  bool Repeat = false;
+
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Connect to EBuilder MySQL table
   if(EBRunMode == kReprocess) {
@@ -1167,9 +1169,9 @@ static void read_summary_table()
 
     sprintf(query_string,"SELECT Path, ENTRY FROM OV_ebuilder "
       "WHERE Run_number = '%s' and SW_Threshold = "
-      "'%04d' and SW_TriggerMode = '%01d' and Res1 = '%02d' and "
-      "Res2 = '%02d' ORDER BY ENTRY;",
-      RunNumber.c_str(),Threshold,(int)EBTrigMode, Res1, Res2);
+      "'%04d' and SW_TriggerMode = '%01d' and Res1 = '00' and "
+      "Res2 = '00' ORDER BY ENTRY;",
+      RunNumber.c_str(),Threshold,(int)EBTrigMode);
     printf("query: %s\n",query_string);
     mysqlpp::Query query3 = myconn.query(query_string);
     mysqlpp::StoreQueryResult res3 = query3.store();
@@ -1218,7 +1220,7 @@ static void read_summary_table()
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Create folder based on parameters
     sprintf(tempfolder,"%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
-            OutputDir.c_str(),RunNumber.c_str(),(int)EBTrigMode,Threshold,Res1,Res2);
+            OutputDir.c_str(),RunNumber.c_str(),(int)EBTrigMode,Threshold,0,0);
     OutputFolder = tempfolder;
     if(mkdir(OutputFolder.c_str(), 0777)) {
       if(errno != EEXIST)
@@ -1233,13 +1235,8 @@ static void read_summary_table()
     die_in_read_summary_table("!Repeat && !write_ebsummary\n");
 
   if(EBRunMode != kNormal) {
-
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Move some decoded OV binary files for processing
-    int rn,rn_error;
-    string tempfname;
-    size_t temppos;
-
     initial_files.clear();
     if(GetDir(decoded_dir, initial_files, 1)) {
       if(errno)
@@ -1253,21 +1250,19 @@ static void read_summary_table()
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Determine files to rename
     vector<string>::iterator fname_begin=initial_files.begin();
-    string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
+    const string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
     if(fname_begin->find(fdelim) == fname_begin->npos)
       die_in_read_summary_table("Error: Cannot find '_' in file name\n");
-    size_t fname_it_delim = fname_begin->find(fdelim);
+    const size_t fname_it_delim = fname_begin->find(fdelim);
 
     vector<string> myfiles[maxUSB];
     map<int,int> mymap;
-    string fusb;
-    int iusb, mapindex;
-    mapindex = 0;
+    int mapindex = 0;
     for(int k = 0; k<(int)initial_files.size(); k++) {
-      fusb = (initial_files[k]).substr(fname_it_delim+1,2);
-      iusb = (int)strtol(fusb.c_str(),NULL,10);
+      string fusb = (initial_files[k]).substr(fname_it_delim+1,2);
+      int iusb = (int)strtol(fusb.c_str(),NULL,10);
       if(!mymap.count(iusb)) mymap[iusb] = mapindex++;
-      (myfiles[mymap[iusb]]).push_back(initial_files[k]);
+      myfiles[mymap[iusb]].push_back(initial_files[k]);
     }
 
     vector<string> files_to_rename;
@@ -1285,27 +1280,25 @@ static void read_summary_table()
       }
     }
     else { // Rename all files if EBRunMode == kReprocess
-      for(int j = 0; j<(int)initial_files.size(); j++) {
+      for(int j = 0; j<(int)initial_files.size(); j++)
         files_to_rename.push_back(decoded_dir + initial_files[j]);
-      }
     }
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Rename files
     for(int i = 0; i<(int)files_to_rename.size(); i++) {
-      rn = 0;
-      rn_error = 0;
-      tempfname = files_to_rename[i];
-      temppos = tempfname.find("decoded");
+      bool rn_error = false;
+      string tempfname = files_to_rename[i];
+      size_t temppos = tempfname.find("decoded");
       if(temppos != tempfname.npos)
         tempfname.replace(temppos,7,"binary");
       else
-        rn_error = 1;
+        rn_error = true;
       temppos = tempfname.find(".done");
       if(temppos != tempfname.npos)
         tempfname.replace(temppos,5,"");
       else
-        rn_error = 1;
+        rn_error = true;
       if(!rn_error) {
         while(rename(files_to_rename[i].c_str(),tempfname.c_str())) {
           log_msg(LOG_ERR,"Could not rename decoded data file.\n");
