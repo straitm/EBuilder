@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "USBstream-TypeDef.h"
 #include "USBstream.h"
 #include <syslog.h>
 

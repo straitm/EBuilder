@@ -1,8 +1,8 @@
 #ifndef __USBStreamUtils__
 #define __USBStreamUtils__
 
-#include "USBstream-TypeDef.h"
 #include <string>
+#include <vector>
 
 // get the configuration from the DCSpaceIP.config file --
 // read IP configuration from file
