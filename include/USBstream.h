@@ -3,7 +3,6 @@
 
 #include <USBstreamUtils.h>
 
-#include "TObject.h"
 #include <fstream>
 #include <deque>
 #include <sys/stat.h>
@@ -46,7 +45,7 @@ private:
   int adj2[64];
   unsigned long int mytolutc;
   char myfilename[100]; // XXX looks dangerous
-  fstream *myFile;
+  std::fstream *myFile;
   bool IsOpen;
   bool IsFanUSB;
   bool BothLayerThresh;

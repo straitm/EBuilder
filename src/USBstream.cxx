@@ -149,7 +149,7 @@ int USBstream::LoadFile(std::string nextfile)
 
   struct stat myfileinfo;
   if(!IsOpen) {
-    myFile = new fstream(myfilename, fstream::in | fstream::binary);
+    myFile = new std::fstream(myfilename, std::fstream::in | std::fstream::binary);
     if(myFile->is_open()) {
       if(stat(myfilename, &myfileinfo) == 0 && //get file size
          myfileinfo.st_size) {
