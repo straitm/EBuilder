@@ -392,7 +392,7 @@ void USBstream::check_data()
           if(packet->size() > 7 && // guarantees at least 1 hit (size > 9 for 2 hits)
              MuonEvent) { // Mu-like double found for this event
             if( myvec.size() > 0 ) {
-              DataVectorIt InsertionSortIt = myvec.end();
+              DataVector::iterator InsertionSortIt = myvec.end();
               bool found = false;
               while(--InsertionSortIt >= myvec.begin()) {
                 if(!LessThan(*packet,*InsertionSortIt, 0)) {

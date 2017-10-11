@@ -363,7 +363,7 @@ static void BuildEvent(DataVector *OutDataVector,
   long int time_s_lo = 0;
   long int time_16ns_hi = 0;
   long int time_16ns_lo = 0;
-  DataVectorIt CurrentOutDataVectorIt = OutDataVector->begin();
+  DataVector::iterator CurrentOutDataVectorIt = OutDataVector->begin();
   vector<int>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
   OVEventHeader *CurrEventHeader = new OVEventHeader;
   OVDataPacketHeader *CurrDataPacketHeader = new OVDataPacketHeader;
@@ -599,7 +599,7 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
   int channel, charge, module, type;
   channel = charge = module = 0;
 
-  DataVectorIt BaselineDataIt;
+  DataVector::iterator BaselineDataIt;
 
   for(BaselineDataIt = BaselineData->begin();
       BaselineDataIt != BaselineData->end();
@@ -1410,7 +1410,7 @@ int main(int argc, char **argv)
 
   // Array of DataVectors for current timestamp to process
   DataVector CurrentDataVector[maxUSB];
-  DataVectorIt CurrentDataVectorIt[maxUSB]; // Array of iterators for current DataVectors
+  DataVector::iterator CurrentDataVectorIt[maxUSB];
   DataVector MinDataVector; // DataVector of current minimum data packets
   vector<int> MinDataPacket; // Minimum and Last Data Packets added
   vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet

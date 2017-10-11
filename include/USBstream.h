@@ -51,7 +51,7 @@ private:
   bool BothLayerThresh;
   bool UseThresh;
   DataVector myvec;
-  DataVectorIt myit;
+  DataVector::iterator myit;
 
   // These functions are for the decoding
   bool got_word(unsigned long int d);
