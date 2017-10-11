@@ -77,23 +77,15 @@ private:
   int fsize;
 };
 
-class OVHitData {
+struct OVHitData {
+  void SetHit(char channel_, short int charge_)
+  {
+    channel = channel_;
+    charge = charge_;
+  }
 
-public:
-
-  OVHitData() {}
-  virtual ~OVHitData() {}
-
-  void SetHit(OVSignal sig) { fHit = sig; }
-
-  OVSignal GetHit() const { return fHit; }
-
-  char GetChannel() const { return fHit.first; }
-  short int GetCharge() const { return fHit.second; }
-
-private:
-
-  OVSignal fHit;
+  char channel;
+  short int charge;
 };
 
 class OVEventHeader {

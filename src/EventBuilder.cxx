@@ -367,7 +367,7 @@ static void BuildEvent(DataVector *OutDataVector,
   vector<int>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
   OVEventHeader *CurrEventHeader = new OVEventHeader;
   OVDataPacketHeader *CurrDataPacketHeader = new OVDataPacketHeader;
-  OVHitData *CurrHit = new OVHitData;
+
   int cnt=0;
 
   if(mydataFile <= 0) {
@@ -492,9 +492,10 @@ static void BuildEvent(DataVector *OutDataVector,
 
         channel = (char)CurrentOutDataVectorIt->at(8+2*m);
         charge = (short int)CurrentOutDataVectorIt->at(7+2*m);
-        CurrHit->SetHit( OVSignal(channel, charge) );
+        OVHitData CurrHit;
+        CurrHit.SetHit(channel, charge);
 
-        nbs = write(mydataFile, CurrHit, sizeof(OVHitData));
+        nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
         if (nbs<0){
           log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
           write_ebretval(-1);
@@ -510,10 +511,10 @@ static void BuildEvent(DataVector *OutDataVector,
         int temp = CurrentOutDataVectorIt->at(7+w) + 0;
         for(int n = 0; n < 16; n++) {
           if(temp & 1) {
+            OVHitData CurrHit;
+            CurrHit.SetHit(16*(nwords-4-w) + n, 1);
 
-            CurrHit->SetHit( OVSignal((char)(16*(nwords-4-w) + n),(short int) 1) );
-
-            nbs = write(mydataFile, CurrHit, sizeof(OVHitData));
+            nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
             if (nbs<0){
               log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
               write_ebretval(-1);
@@ -532,7 +533,6 @@ static void BuildEvent(DataVector *OutDataVector,
 
   delete CurrEventHeader;
   delete CurrDataPacketHeader;
-  delete CurrHit;
 }
 
 static int parse_options(int argc, char **argv)

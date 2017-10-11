@@ -5,6 +5,5 @@
 
 typedef std::vector<std::vector<int> > DataVector;
 typedef std::vector<std::vector<int> >::iterator DataVectorIt;
-typedef std::pair<char,short int> OVSignal;
 
 #endif
