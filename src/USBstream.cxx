@@ -22,6 +22,7 @@ USBstream::USBstream()
   word_count[3] = 0;
   bytesleft=0;
   fsize=0;
+  extra = false;
   myvec.reserve(65535); // XXX really one less than 0x10000? I mean, reserve()
                         // usually doesn't matter anyway...
   myit=myvec.begin();
