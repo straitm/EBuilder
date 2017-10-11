@@ -1411,7 +1411,7 @@ int main(int argc, char **argv)
   DataVector CurrentDataVector[maxUSB];
   DataVectorIt CurrentDataVectorIt[maxUSB]; // Array of iterators for current DataVectors
   DataVector MinDataVector; // DataVector of current minimum data packets
-  DataPacket MinDataPacket; // Minimum and Last Data Packets added
+  vector<int> MinDataPacket; // Minimum and Last Data Packets added
   vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int MinIndex; // index of minimum event added to USB stream
   int dataFile = 0; // output file descriptor
@@ -1577,7 +1577,7 @@ int main(int argc, char **argv)
 
       for(int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
 
-        DataPacket CurrentDataPacket = *(CurrentDataVectorIt[k]);
+        vector<int> CurrentDataPacket = *(CurrentDataVectorIt[k]);
 
         // Find real minimum; no clock slew
         if( LessThan(CurrentDataPacket,MinDataPacket,0) ) {

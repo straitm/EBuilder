@@ -183,7 +183,6 @@ bool USBstream::decode()
   if(!myFile->is_open()) {
     log_msg(LOG_CRIT, "File not open! Exiting.\n");
     exit(1);
-    return false;
   }
 
   if(myit == myvec.end())
@@ -389,13 +388,13 @@ void USBstream::check_data()
             MuonEvent = true;
           }
 
-          if(packet->size() > 7 && // guaruntees at least 1 hit (size > 9 for 2 hits)
+          if(packet->size() > 7 && // guarantees at least 1 hit (size > 9 for 2 hits)
              MuonEvent) { // Mu-like double found for this event
-            if( myvec.size() > 0 ) { //&& LessThan(*packet,myvec.back()) ) \{
+            if( myvec.size() > 0 ) {
               DataVectorIt InsertionSortIt = myvec.end();
               bool found = false;
               while(--InsertionSortIt >= myvec.begin()) {
-                if(!LessThan(*packet,*InsertionSortIt)) {
+                if(!LessThan(*packet,*InsertionSortIt, 0)) {
                   // Due to edge strip trigger logic in the trigger box firmware,
                   // we find duplicate trigger box packets of the form:
                   // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000

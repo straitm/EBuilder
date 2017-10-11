@@ -11,7 +11,8 @@ char* config_string(const char* path, const char* key);
 // Send message to screen and syslog
 void log_msg(int priority, const char * const format, ...);
 
-bool LessThan(DataPacket lhs, DataPacket rhs, int ClockSlew=0);
+bool LessThan(const std::vector<int> & lhs,
+              const std::vector<int> & rhs, int ClockSlew);
 
 void start_log();
 
