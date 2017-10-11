@@ -7,9 +7,6 @@ USBstream::USBstream()
 {
   mythresh=0;
   myusb=-1;
-  mucounter=0;
-  spycounter=0;
-  avglength=0;
   mytolsp=0;
   mytolutc=0;
   words = 0;
@@ -102,6 +99,9 @@ void USBstream::GetBaselineData(DataVector *vec)
 
 bool USBstream::GetNextTimeStamp(DataVector *vec)
 {
+  static long int mucounter = 0;
+  static long int spycounter = 0;
+  static float avglength = 0;
   unsigned long int tmp = 0;
   while(1) {
     if(myit==myvec.end())
@@ -122,14 +122,12 @@ bool USBstream::GetNextTimeStamp(DataVector *vec)
 
     if((*myit).size()>4) { // Look for next time stamp and break
       tmp = (*myit)[1] << 8;
-      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 0xffff)) {
+      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 0xffff))
         break;
-      }
       else if(tmp + (*myit)[2] == ((mytolutc >> 16) & 0xffff)) {
         tmp = (*myit)[3] << 8;
-        if(tmp + (*myit)[4] > (mytolutc & 0xffff)) {
+        if(tmp + (*myit)[4] > (mytolutc & 0xffff))
           break;
-        }
       }
     }
     myit++;
@@ -286,16 +284,16 @@ void USBstream::check_data()
       break;
 
     if(data[0] == 0xffff) { // check header
-      if(!(got >= 2))
+      if(got < 2)
         break;
 
       const unsigned int len = data[1] & 0xff;
       if(len > 1) {
-        if(!(got >= len + 1))
+        if(got < len + 1)
           break;
         unsigned int par = 0;
-        int module = (data[1] >> 8) & 0x7f;
-        int type = data[1] >> 15; // check to see if trigger packets
+        const int module = (data[1] >> 8) & 0x7f;
+        const int type = data[1] >> 15; // check to see if trigger packets
         std::vector<int> *packet=new std::vector<int>;
         bool hitarray1[64] = {0};
         bool hitarray2[64] = {0};
@@ -305,14 +303,14 @@ void USBstream::check_data()
           if(m < len) {
             if(m < 4) {
               // Handle trigger box packets
+              // XXX Drop this whole concept for ProtoDUNE-SP CRT?
               if(m == 3 && IsFanUSB) {
                 if(module >= 0 && module <= 63) {
                   int low = (data[m] & 0xffff) - offset[module];
                   if(low < 0) {
                     int high = packet->back() - 1;
-                    if(high < 0) { // sync packets come every 2^29 clock counts
+                    if(high < 0) // sync packets come every 2^29 clock counts
                       high += (1 << 13);
-                    }
                     packet->pop_back(); packet->push_back(high);
                     low += (1 << 16);
                     packet->push_back(low);
@@ -330,18 +328,15 @@ void USBstream::check_data()
               }
             }
             else {
-              if(type) {
-                if(m%2==0) { // ADC charge
-                  if(!(data[m+1]>63 || data[m+1]<0 || module<0 || module>63)) {
-                    data[m] -= baseline[module][data[m+1]];
-                    packet->push_back(data[m]);
-                    packet->push_back(data[m+1]);
-                    hitarray1[data[m+1]] = true;
-                    if(data[m]>mythresh) {
-                      hitarray2[data[m+1]] = true;
-                    }
-                  }
-                }
+              if(type &&
+                 m%2 == 0 && // ADC charge
+                 !(data[m+1] > 63 || data[m+1] < 0 || module < 0 || module > 63)) {
+                data[m] -= baseline[module][data[m+1]];
+                packet->push_back(data[m]);
+                packet->push_back(data[m+1]);
+                hitarray1[data[m+1]] = true;
+                if(data[m]>mythresh)
+                  hitarray2[data[m+1]] = true;
               }
               else {
                 packet->push_back(data[m]);
@@ -366,27 +361,24 @@ void USBstream::check_data()
           if(UseThresh && type) {
             if(BothLayerThresh) {
               for(int i = 0; i<32; i++) {
-                if( hitarray2[i]) {
-                  if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
-                    MuonEvent = true;
-                    break;
-                  }
+                if(hitarray2[i] &&
+                   ( hitarray2[adj1[i]] || hitarray2[adj2[i]] )){
+                  MuonEvent = true;
+                  break;
                 }
               }
             }
             else {
               for(int i = 0; i<32; i++) {
-                if(hitarray1[i]) {
-                  if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
-                    MuonEvent = true;
-                    break;
-                  }
+                if(hitarray1[i] &&
+                   ( hitarray2[adj1[i]] || hitarray2[adj2[i]] )){
+                  MuonEvent = true;
+                  break;
                 }
-                if(hitarray2[i]) {
-                  if( hitarray1[adj1[i]] || hitarray1[adj2[i]] ){
-                    MuonEvent = true;
-                    break;
-                  }
+                if(hitarray2[i] &&
+                   ( hitarray1[adj1[i]] || hitarray1[adj2[i]] )){
+                  MuonEvent = true;
+                  break;
                 }
               }
             }
@@ -395,47 +387,45 @@ void USBstream::check_data()
             MuonEvent = true;
           }
 
-          if(packet->size() > 7) { // guaruntees at least 1 hit (size > 9 for 2 hits)
-            if(MuonEvent) { // Mu-like double found for this event
-              if( myvec.size() > 0 ) { //&& LessThan(*packet,myvec.back()) ) \{
-                DataVectorIt InsertionSortIt = myvec.end();
-                bool found = false;
-                while(--InsertionSortIt >= myvec.begin()) {
-                  if(!LessThan(*packet,*InsertionSortIt)) {
-                    // Due to edge strip trigger logic in the trigger box firmware,
-                    // we find duplicate trigger box packets of the form:
-                    // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000
-                    // p, 15366, 8086, 6131, 0, 1000 0000 0000 0000
-                    // These packets come from the same coincidence and one
-                    // packet is missing a hit because its partner was actually
-                    // also satisfied the mu-like double criteria.
-                    // We search for these duplicate trigger box packets and
-                    // make an OR of the hit data.
-                    if(IsFanUSB) {
-                      // packets should be separated by no more than 3 clock cycles
-                      if(!LessThan(*InsertionSortIt,*packet,3)) {
-                        // packets should come from the same module
-                        if(((packet->at(0) >> 8) & 0x7f) ==
-                           ((InsertionSortIt->at(0) >> 8) & 0x7f)) {
-                          // Trigger box packets all have a fixed size
-                          (*InsertionSortIt)[7] |= (*packet)[7];
-                          (*InsertionSortIt)[8] |= (*packet)[8];
-                          found = true;
-                          break;
-                        }
-                      }
-                    }
-                    myvec.insert(InsertionSortIt+1,*packet);
+          if(packet->size() > 7 && // guaruntees at least 1 hit (size > 9 for 2 hits)
+             MuonEvent) { // Mu-like double found for this event
+            if( myvec.size() > 0 ) { //&& LessThan(*packet,myvec.back()) ) \{
+              DataVectorIt InsertionSortIt = myvec.end();
+              bool found = false;
+              while(--InsertionSortIt >= myvec.begin()) {
+                if(!LessThan(*packet,*InsertionSortIt)) {
+                  // Due to edge strip trigger logic in the trigger box firmware,
+                  // we find duplicate trigger box packets of the form:
+                  // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000
+                  // p, 15366, 8086, 6131, 0, 1000 0000 0000 0000
+                  // These packets come from the same coincidence and one
+                  // packet is missing a hit because its partner was actually
+                  // also satisfied the mu-like double criteria.
+                  // We search for these duplicate trigger box packets and
+                  // make an OR of the hit data.
+                  if(IsFanUSB &&
+                     // packets should be separated by no more than 3 clock cycles
+                     // XXX Is this desirable for ProtoDUNE-SP CRT?
+                     !LessThan(*InsertionSortIt,*packet,3) &&
+                     // packets should come from the same module
+                     ((packet->at(0) >> 8) & 0x7f) ==
+                     ((InsertionSortIt->at(0) >> 8) & 0x7f)) {
+                    // Trigger box packets all have a fixed size
+                    (*InsertionSortIt)[7] |= (*packet)[7];
+                    (*InsertionSortIt)[8] |= (*packet)[8];
                     found = true;
                     break;
                   }
+                  myvec.insert(InsertionSortIt+1,*packet);
+                  found = true;
+                  break;
                 }
-                if(!found) // Reached beginning of myvec
-                  myvec.insert(myvec.begin(),*packet);
               }
-              else {
-                myvec.push_back(*packet);
-              }
+              if(!found) // Reached beginning of myvec
+                myvec.insert(myvec.begin(),*packet);
+            }
+            else {
+              myvec.push_back(*packet);
             }
           }
           //delete first few elements of data
