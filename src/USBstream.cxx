@@ -192,6 +192,7 @@ bool USBstream::decode()
 
   Reset();
 
+  struct stat fileinfo;
   if(stat(myfilename, &fileinfo) == 0) //get file size
     bytesleft = fileinfo.st_size;
 

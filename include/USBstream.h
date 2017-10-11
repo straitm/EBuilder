@@ -73,7 +73,6 @@ private:
   bool extra = false;          // leftovers
   unsigned int word_index;
   unsigned int word_count[4];
-  struct stat fileinfo;
   int bytesleft;
   int fsize;
 };
