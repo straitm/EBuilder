@@ -44,7 +44,6 @@ private:
   int offset[64];
   int adj1[64];
   int adj2[64];
-  unsigned long int mytolsp;
   unsigned long int mytolutc;
   char myfilename[100]; // XXX looks dangerous
   fstream *myFile;

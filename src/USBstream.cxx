@@ -6,7 +6,6 @@ USBstream::USBstream()
 {
   mythresh=0;
   myusb=-1;
-  mytolsp=0;
   mytolutc=0;
   words = 0;
   got_hi = false;
@@ -91,7 +90,7 @@ void USBstream::GetBaselineData(DataVector *vec)
     if(myit->size() > 7)
       vec->push_back(*myit);
 
-  mytolutc = mytolsp = 0; // Reset mytolutc for data
+  mytolutc = 0; // Reset mytolutc for data
   time_hi_1 = time_hi_2 = 0;
   time_lo_1 = time_lo_2 = 0;
 }
