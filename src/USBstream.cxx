@@ -20,7 +20,6 @@ USBstream::USBstream()
   time_hi_2 = 0;
   time_lo_1 = 0;
   time_lo_2 = 0;
-  timestamps_read = 0;
   word_index = 0;
   word_count[0] = 0;
   word_count[1] = 0;
@@ -28,7 +27,8 @@ USBstream::USBstream()
   word_count[3] = 0;
   bytesleft=0;
   fsize=0;
-  myvec.reserve(65535);
+  myvec.reserve(65535); // XXX really one less than 0x10000? I mean, reserve()
+                        // usually doesn't matter anyway...
   myit=myvec.begin();
   IsOpen = false;
   IsFanUSB = false;
@@ -51,7 +51,6 @@ void USBstream::Reset()
 {
   words = 0;
   got_hi = false;
-  timestamps_read = 0;
   word_index = 0;
   word_count[0] =  0;
   word_count[1] = 0;
@@ -123,12 +122,12 @@ bool USBstream::GetNextTimeStamp(DataVector *vec)
 
     if((*myit).size()>4) { // Look for next time stamp and break
       tmp = (*myit)[1] << 8;
-      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 65535)) {
+      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 0xffff)) {
         break;
       }
-      else if(tmp + (*myit)[2] == ((mytolutc >> 16) & 65535)) {
+      else if(tmp + (*myit)[2] == ((mytolutc >> 16) & 0xffff)) {
         tmp = (*myit)[3] << 8;
-        if(tmp + (*myit)[4] > (mytolutc & 65535)) {
+        if(tmp + (*myit)[4] > (mytolutc & 0xffff)) {
           break;
         }
       }
@@ -178,7 +177,9 @@ int USBstream::LoadFile(std::string nextfile)
 
 bool USBstream::decode()
 {
-  char filedata[65535];//data buffer
+  // Yes, it appears that this really is supposed to be one less than 0x10000
+  // as it fills it in 0xffff size increments below.
+  char filedata[0xffff];
 
   if(!myFile->is_open()) {
     std::cerr << "File not open! Exiting.\n";
@@ -186,12 +187,10 @@ bool USBstream::decode()
     return false;
   }
 
-  if(myit==myvec.end()) {
+  if(myit == myvec.end())
     myvec.clear();
-  }
-  else if(myit<myvec.end()) {
+  else if(myit < myvec.end())
     myvec.assign(myit,myvec.end());
-  }
 
   Reset();
 
@@ -204,11 +203,12 @@ bool USBstream::decode()
 
   while(true){ //loop over buffer packets
     counter++;
-    if(bytesleft < 65535)
+    if(bytesleft < 0xffff){
       fsize = bytesleft;
+    }
     else {
-      fsize = 65535;
-      bytesleft -= 65535;
+      fsize = 0xffff;
+      bytesleft -= 0xffff;
     }
 
     myFile->read(filedata, fsize);//read data of appropriate size
@@ -222,7 +222,7 @@ bool USBstream::decode()
       }
       else {
         if(pretype == exp) {
-          word = (word << 6) | payload; //bitwise OR
+          word = (word << 6) | payload;
           if(++exp == 4) {
             exp = 0;
 
@@ -270,24 +270,26 @@ bool USBstream::got_word(unsigned long int d)
     if(check_debug(d))
       return restart;
 
-    data.push_back((unsigned int)(d & 65535));//segfault this line
+    data.push_back((unsigned int)(d & 0xffff));//segfault this line
     check_data();
   }
-  return 0;
+  return false;
 }
 
 void USBstream::check_data()
 {
   while(1) {
     bool got_packet = false;
-    unsigned int got = data.size();
+    const unsigned int got = data.size();
 
-    if(!got)
+    if(got == 0)
       break;
+
     if(data[0] == 0xffff) { // check header
       if(!(got >= 2))
         break;
-      unsigned int len = data[1] & 0xff;
+
+      const unsigned int len = data[1] & 0xff;
       if(len > 1) {
         if(!(got >= len + 1))
           break;
@@ -300,10 +302,10 @@ void USBstream::check_data()
 
         for(unsigned int m = 1; m <= len; m++) {
           par ^= data[m];
-          if(m<len) {
-            if(m<4) {
+          if(m < len) {
+            if(m < 4) {
               // Handle trigger box packets
-              if(m==3 && IsFanUSB) {
+              if(m == 3 && IsFanUSB) {
                 if(module >= 0 && module <= 63) {
                   int low = (data[m] & 0xffff) - offset[module];
                   if(low < 0) {
@@ -357,9 +359,7 @@ void USBstream::check_data()
         if(!par) { // check parity
           got_packet = true;
           flush_extra();
-          if(first_packet) {
-            first_packet = false;
-          }
+          first_packet = false;
 
           // This block builds muon events
           bool MuonEvent = false;
@@ -394,6 +394,7 @@ void USBstream::check_data()
           else {
             MuonEvent = true;
           }
+
           if(packet->size() > 7) { // guaruntees at least 1 hit (size > 9 for 2 hits)
             if(MuonEvent) { // Mu-like double found for this event
               if( myvec.size() > 0 ) { //&& LessThan(*packet,myvec.back()) ) \{
@@ -429,9 +430,8 @@ void USBstream::check_data()
                     break;
                   }
                 }
-                if(!found) { // Reached beginning of myvec
+                if(!found) // Reached beginning of myvec
                   myvec.insert(myvec.begin(),*packet);
-                }
               }
               else {
                 myvec.push_back(*packet);
@@ -468,21 +468,20 @@ void USBstream::check_data()
 
 bool USBstream::check_debug(unsigned long int d)
 {
-  unsigned int a = (d >> 16) & 0xff;
+  const unsigned int a = (d >> 16) & 0xff;
   d = d & 0xffff;
 
   if(a == 0xc8) {
     time_hi_1 = (d >> 8) & 0xff;
     time_hi_2 = d & 0xff;
     got_hi = true;
-    return 1;
+    return true;
   }
   else if(a == 0xc9) {
     if(got_hi) {
       time_lo_1 = (d >> 8) & 0xff;
       time_lo_2 = d & 0xff;
       got_hi = false;
-      timestamps_read++;
       flush_extra();
       if(!mytolutc) { // Check to see if first time stamp found and if so, rewind file
         mytolutc = (time_hi_1 << 8) + time_hi_2;
@@ -491,17 +490,17 @@ bool USBstream::check_debug(unsigned long int d)
         first_packet = true;
       }
     }
-    return 1;
+    return true;
   }
   else if(a == 0xc5) {
     word_index = 0;
-    return 1;
+    return true;
   }
   else if(a == 0xc6) {
     word_count[word_index++] = d;
     if(word_index == 4) {
-      long int t = (word_count[0] << 16) + word_count[1];
-      long int v = (word_count[2] << 16) + word_count[3];
+      const long int t = (word_count[0] << 16) + word_count[1];
+      const long int v = (word_count[2] << 16) + word_count[3];
       long int diff = t - v - words;
       if(diff < 0) {
         diff += (1 << 31);
@@ -510,18 +509,18 @@ bool USBstream::check_debug(unsigned long int d)
       }
       flush_extra();
     }
-    return 1;
+    return true;
   }
   else if(a == 0xc1) {
     flush_extra();
-    return 1;
+    return true;
   }
   else if(a == 0xc2) {
     flush_extra();
-    return 1;
+    return true;
   }
-  else
-    return 0;
+
+  return false;
 }
 
 void USBstream::flush_extra()
