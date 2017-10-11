@@ -70,7 +70,7 @@ private:
   int time_lo_2;
   int timestamps_read;
   std::deque<int> data;           // 11
-  std::deque<int> extra;          // leftovers
+  bool extra = false;          // leftovers
   unsigned int word_index;
   unsigned int word_count[4];
   struct stat fileinfo;

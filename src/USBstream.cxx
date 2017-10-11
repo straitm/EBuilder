@@ -242,9 +242,9 @@ bool USBstream::decode()
     if(fsize==bytesleft) //exit the loop after last read
       break;
   }
-  //extra.push_back(data); // Uncommenting these 2 lines assumes OVDAQ only
-                           // writes complete packets to disk at start/end of files
-  //flush_extra();         // For now this is not true;
+  //extra = true;  // Uncommenting these 2 lines assumes OVDAQ only
+                   // writes complete packets to disk at start/end of files
+  //flush_extra(); // For now this is not true
 
   while(myFile->is_open()) {
     myFile->close();
@@ -438,7 +438,7 @@ void USBstream::check_data()
       }
     }
     if(!got_packet){
-      extra.push_back(data.front());
+      extra = true;
       data.pop_front();
     }
   }
@@ -515,8 +515,8 @@ bool USBstream::check_debug(unsigned long int d)
 
 void USBstream::flush_extra()
 {
-  if(!extra.empty()) {
-    extra.clear();
+  if(extra) {
+    extra = false;
 
     // Ignore incomplete packets at the beginning of the run
     if(!first_packet && mytolutc)
