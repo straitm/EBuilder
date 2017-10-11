@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include <iostream>
 #include "USBstream.h"
 #include <syslog.h>
 
@@ -136,7 +135,7 @@ bool USBstream::GetNextTimeStamp(DataVector *vec)
   mytolutc = (tmp << 16) + ((*myit)[3] << 8) + (*myit)[4];
   myit++;
 
-  printf("Number of muon events found in usb stream %d: %ld (%ld) (%f)\n",
+  log_msg(LOG_INFO, "Number of muon events found in usb stream %d: %ld (%ld) (%f)\n",
          myusb,mucounter,spycounter,avglength);
   mucounter = 0;
   spycounter = 0;
@@ -153,13 +152,13 @@ int USBstream::LoadFile(std::string nextfile)
   if(!IsOpen) {
     myFile = new fstream(myfilename, fstream::in | fstream::binary);
     if(myFile->is_open()) {
-      if(stat(myfilename, &myfileinfo) == 0) { //get file size
-        if(myfileinfo.st_size) {
-          IsOpen = true;
-          return 1;
-        }
+      if(stat(myfilename, &myfileinfo) == 0 && //get file size
+         myfileinfo.st_size) {
+        IsOpen = true;
+        return 1;
       }
-      myFile->close(); delete myFile; // Clean up
+      myFile->close();
+      delete myFile; // Clean up
       log_msg(LOG_ERR,"USB %d has died. Exiting.\n",myusb);
       return -1;
     }
@@ -167,9 +166,11 @@ int USBstream::LoadFile(std::string nextfile)
       delete myFile;
     }
   }
-  else return 1;
+  else{
+    return 1;
+  }
 
-  std::cout << "Waiting for files...\n";
+  log_msg(LOG_INFO, "Waiting for files...\n");
   return 0;
 }
 
@@ -180,7 +181,7 @@ bool USBstream::decode()
   char filedata[0xffff];
 
   if(!myFile->is_open()) {
-    std::cerr << "File not open! Exiting.\n";
+    log_msg(LOG_CRIT, "File not open! Exiting.\n");
     exit(1);
     return false;
   }
