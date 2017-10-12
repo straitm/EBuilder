@@ -20,9 +20,9 @@ using namespace std;
 enum RunMode {kNormal, kRecovery, kReprocess};
 enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 
-// Just a little convenience for reading from the database
-struct usb_sbo{
-  int serial, board, offset;
+// Just a little convenience struct for reading from the database
+struct usb_sbop{
+  int serial, board, offset, pmtboard_u;
 };
 
 // Consts
@@ -921,13 +921,13 @@ static vector<int> get_distinct_usb_serials(mysqlpp::Connection & myconn,
   return serials;
 }
 
-// Return a vector of {serial numbers, board numbers, time offsets} for
-// all USBs in the given table.  Sets no globals.
-static vector<usb_sbo> get_sbos(mysqlpp::Connection & myconn,
-                                const char * const config_table)
+// Return a vector of {serial numbers, board numbers, time offsets, pmtboard_u}
+// for all USBs in the given table.  Sets no globals.
+static vector<usb_sbop> get_sbops(mysqlpp::Connection & myconn,
+                                  const char * const config_table)
 {
   char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT USB_serial, board_number, offset FROM %s;",
+  sprintf(query_string,"SELECT USB_serial, board_number, offset, pmtboard_u FROM %s;",
     config_table);
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res=query.store();
@@ -935,16 +935,38 @@ static vector<usb_sbo> get_sbos(mysqlpp::Connection & myconn,
     die_with_log("MySQL query (%s) error: %s\n", query_string,query.error());
   log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
 
-  vector<usb_sbo> sbos;
+  vector<usb_sbop> sbops;
   for(unsigned int i = 0; i < res.num_rows(); i++){
-    usb_sbo sbo;
-    sbo.serial = atoi(res[i][0]);
-    sbo.board  = atoi(res[i][1]);
-    sbo.offset = atoi(res[i][2]);
+    usb_sbop s;
+    s.serial = atoi(res[i][0]);
+    s.board  = atoi(res[i][1]);
+    s.offset = atoi(res[i][2]);
+    s.pmtboard_u = atoi(res[i][3]);
   }
-  return sbos;
+  return sbops;
 }
 
+static std::pair<int, int> board_count(mysqlpp::Connection & myconn,
+                                       const char * const config_table)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string,"SELECT DISTINCT pmtboard_u FROM %s;",config_table);
+  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::StoreQueryResult res = query.store();
+  if(res.num_rows() < 1)
+    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
+  log_msg(LOG_INFO,"Found %u distinct PMT boards in table %s\n",
+          res.num_rows(), config_table);
+
+  int max = 0;
+  for(unsigned int i = 0; i < res.num_rows(); i++) {
+    const int pmtnum = atoi(res[i][0]);
+    if(pmtnum > max) max = pmtnum;
+  }
+  log_msg(LOG_INFO,"Found max PMT board number %d in table %s\n", max, config_table);
+
+  return std::pair<int, int>(res.num_rows(), max);
+}
 
 // Database tables read from: OV_runsummary; whatever table OV_runsummary names
 // in config_table, such as online400; and OV_ebuilder.
@@ -989,80 +1011,48 @@ static void read_summary_table()
     Datamap[i] = usbmap[nonfanin_serials[i]];
 
   // Load the time offsets for these boards
-  {
-    const vector<usb_sbo> sbos = get_sbos(myconn, config_table);
+  const vector<usb_sbop> sbops = get_sbops(myconn, config_table);
 
-    // Create map of UBS_serial to array of pmt board offsets
-    for(unsigned int i = 0; i < sbos.size(); i++) {
-      if(!PMTOffsets.count(sbos[i].serial))
-        PMTOffsets[sbos[i].serial] = new int[maxModules];
-      if(sbos[i].board < maxModules)
-        PMTOffsets[sbos[i].serial][sbos[i].board] = sbos[i].offset;
-    }
+  // Create map of UBS_serial to array of pmt board offsets
+  for(unsigned int i = 0; i < sbops.size(); i++) {
+    if(!PMTOffsets.count(sbops[i].serial))
+      PMTOffsets[sbops[i].serial] = new int[maxModules];
+    if(sbops[i].board < maxModules)
+      PMTOffsets[sbops[i].serial][sbops[i].board] = sbops[i].offset;
   }
 
   // USB to array of PMT offsets
   for(map<int,int*>::iterator os = PMTOffsets.begin(); os != PMTOffsets.end(); os++)
     OVUSBStream[usbmap[os->first]].SetOffset(os->second);
 
-  //////////////////////////////////////////////////////////////////////
   // Count the number of boards in this setup
-  char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT DISTINCT pmtboard_u FROM %s;",config_table);
-  mysqlpp::Query query5 = myconn.query(query_string);
-  mysqlpp::StoreQueryResult res=query5.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query5.error());
-  log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
-          (long int)res.num_rows(),config_table);
+  const int totalboards = board_count(myconn, config_table).first;
+  const int max_board   = board_count(myconn, config_table).second;
+  overflow = new bool[max_board+1];
+  maxcount_16ns_hi = new long int[max_board+1];
+  maxcount_16ns_lo = new long int[max_board+1];
+  memset(overflow, 0, (max_board+1)*sizeof(bool));
+  memset(maxcount_16ns_hi, 0, (max_board+1)*sizeof(long int));
+  memset(maxcount_16ns_lo, 0, (max_board+1)*sizeof(long int));
 
-  const int totalboards = res.num_rows();
-
-  {
-    int max = 0, pmtnum = 0;
-    for(int i = 0; i<(int)res.num_rows(); i++) {
-      pmtnum = atoi(res[i][0]);
-      if(pmtnum > max) max = pmtnum;
-    }
-    log_msg(LOG_INFO,"Found max PMT board number %d in table %s\n",max,config_table);
-
-    overflow = new bool[max+1];
-    maxcount_16ns_hi = new long int[max+1];
-    maxcount_16ns_lo = new long int[max+1];
-    memset(overflow, 0, (max+1)*sizeof(bool));
-    memset(maxcount_16ns_hi, 0, (max+1)*sizeof(long int));
-    memset(maxcount_16ns_lo, 0, (max+1)*sizeof(long int));
-  }
-
-  //////////////////////////////////////////////////////////////////////
   // Count the number of PMT and Fan-in boards in this setup
-  sprintf(query_string,"SELECT HV, USB_serial, board_number, pmtboard_u FROM %s;",
-    config_table);
-  mysqlpp::Query query6 = myconn.query(query_string);
-  res=query6.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query6.error());
-  log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
-          (long int)res.num_rows(),config_table);
-
-  if((int)res.num_rows() != totalboards) // config table has duplicate entries
+  if((int)sbops.size() != totalboards) // config table has duplicate entries
     die_with_log("Found duplicate pmtboard_u entries in table %s\n",
             config_table);
 
   // This is a temporary internal mapping used only by the EBuilder
-  for(int i = 0; i<(int)res.num_rows(); i++)
-    PMTUniqueMap[1000*atoi(res[i][1])+atoi(res[i][2])] = atoi(res[i][3]);
+  for(unsigned int i = 0; i < sbops.size(); i++)
+    PMTUniqueMap[1000*sbops[i].serial+sbops[i].board] = sbops[i].pmtboard_u;
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
+  char query_string[BUFSIZE];
   sprintf(query_string, "SELECT Run_number,Run_Type,SW_Threshold,"
     "SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,stop_time"
     "FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
     RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
-  res = query.store();
+  mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n",
       query_string,query.error());
