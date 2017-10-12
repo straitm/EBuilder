@@ -122,7 +122,7 @@ static bool write_ebretval(const int val)
 
 static void *handle(void *ptr) // This defines a thread to decode files
 {
-  long int usb = (long int) ptr;
+  long int usb = (long int) ptr; // XXX munging a void* into an int!
   while(!OVUSBStream[(int)usb].decode()) usleep(100);
   return NULL;
 }
@@ -762,7 +762,9 @@ static bool GetBaselines()
     gThreads[Datamap[j]]->Run();
   }
 
-  //                                  XXX casting an integer to void*!  Why?!
+  // XXX what's the point of running a thread, then blocking until it finishes?
+  // Why not just call the function?
+  //                                  XXX munging an int into a void*!
   joinerThread = new TThread("joinerThread", joiner, (void*)num_nonFanUSB);
   joinerThread->Run();
 
@@ -936,37 +938,25 @@ static void read_summary_table()
 
   const char * const config_table = get_config_table_name(myconn);
 
-  const vector<int> usbserials = get_distinct_usb_serials(myconn, config_table, false);
-  numUSB = usbserials.size();
+  const vector<int>
+    usbserials       = get_distinct_usb_serials(myconn, config_table, false),
+    nonfanin_serials = get_distinct_usb_serials(myconn, config_table, true);
+  numUSB        = usbserials.size();
+  num_nonFanUSB = nonfanin_serials.size();
 
-  map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
-  for(int i = 0; i<numUSB; i++) {
-    USBmap[usbserials[i]] = i;
+  map<int,int> usbmap; // Maps USB number to numerical ordering of all USBs
+  for(unsigned int i = 0; i < usbserials.size(); i++) {
+    usbmap[usbserials[i]] = i;
     OVUSBStream[i].SetUSB(usbserials[i]);
+
+    // Identify the fan-in USBs. I think no code cares, though.
+    if(find(nonfanin_serials.begin(), nonfanin_serials.end(), usbserials[i])
+       == nonfanin_serials.end())
+      OVUSBStream[i].SetIsFanUSB();
   }
 
-  const vector<int> nonfanin_usbserials =
-    get_distinct_usb_serials(myconn, config_table, true);
-
-  num_nonFanUSB = nonfanin_usbserials.size();
-
-  for(unsigned int i = 0; i < nonfanin_usbserials.size(); i++)
-    Datamap[i] = USBmap[nonfanin_usbserials[i]];
-
-  // Identify Fan-in USBs -- FixME is this needed?
-  for(map<int,int>::iterator USBmapIt = USBmap.begin();
-      USBmapIt != USBmap.end(); USBmapIt++) {
-    bool PMTUSBFound = false;
-    for(map<int,int>::iterator DatamapIt = Datamap.begin();
-        DatamapIt != Datamap.end(); DatamapIt++)
-      if(USBmapIt->second == DatamapIt->second)
-        PMTUSBFound = true;
-
-    if(!PMTUSBFound) {
-      OVUSBStream[USBmapIt->second].SetIsFanUSB();
-      log_msg(LOG_INFO,"USB %d identified as Fan-in USB\n",USBmapIt->first);
-    }
-  }
+  for(unsigned int i = 0; i < nonfanin_serials.size(); i++)
+    Datamap[i] = usbmap[nonfanin_serials[i]];
 
   //////////////////////////////////////////////////////////////////////
   // Load the offsets for these boards
@@ -992,7 +982,7 @@ static void read_summary_table()
   for(map<int,int*>::iterator pmtoffsetsIt = PMTOffsets.begin();
       pmtoffsetsIt != PMTOffsets.end();
       pmtoffsetsIt++)
-    OVUSBStream[USBmap[pmtoffsetsIt->first]].SetOffset(pmtoffsetsIt->second);
+    OVUSBStream[usbmap[pmtoffsetsIt->first]].SetOffset(pmtoffsetsIt->second);
 
   //////////////////////////////////////////////////////////////////////
   // Count the number of boards in this setup
