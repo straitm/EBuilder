@@ -58,7 +58,7 @@ static char database[BUFSIZE] = {0};
 
 // Set in read_summary_table() from database information and used throughout
 static int numUSB = 0;
-static int numFanUSB = 0;
+static int num_nonFanUSB = 0;
 static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
                              // USBs to all numerical ordering of all USBs
 static map<int,int*> PMTOffsets; // Map to hold offsets for each PMT board
@@ -733,7 +733,7 @@ static bool GetBaselines()
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Sanity check on number of baseline files
-  if((int)in_files.size() != numUSB-numFanUSB) {
+  if((int)in_files.size() != num_nonFanUSB) {
     log_msg(LOG_ERR, "Fatal Error: Baseline file count (%lu) != "
       "numUSB (%d) in directory %s\n", (long int)in_files.size(), numUSB,
        BinaryDir.c_str());
@@ -742,7 +742,7 @@ static bool GetBaselines()
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set USB numbers for each OVUSBStream and load baseline files
-  for(int i = 0; i < numUSB - numFanUSB; i++) {
+  for(int i = 0; i < num_nonFanUSB; i++) {
     // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
       log_msg(LOG_ERR, "Fatal Error: Found USB number "
@@ -755,14 +755,15 @@ static bool GetBaselines()
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Decode all files at once and load into memory
-  for(int j=0; j<numUSB-numFanUSB; j++) { // Load all files in at once
+  for(int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n",Datamap[j]);
     gThreads[Datamap[j]] =
       new TThread(Form("gThreads%d",Datamap[j]), handle, (void*) Datamap[j]);
     gThreads[Datamap[j]]->Run();
   }
 
-  joinerThread = new TThread("joinerThread", joiner, (void*) (numUSB-numFanUSB));
+  //                                  XXX casting an integer to void*!  Why?!
+  joinerThread = new TThread("joinerThread", joiner, (void*)num_nonFanUSB);
   joinerThread->Run();
 
   while(!finished) sleep(1); // To be optimized -- never done for Double Chooz - needed?
@@ -770,7 +771,7 @@ static bool GetBaselines()
 
   joinerThread->Join();
 
-  for(int k=0; k<numUSB-numFanUSB; k++) delete gThreads[Datamap[k]];
+  for(int k=0; k < num_nonFanUSB; k++) delete gThreads[Datamap[k]];
   delete joinerThread;
 
   cout << "Joined all threads!\n";
@@ -787,7 +788,7 @@ static bool GetBaselines()
 
   DataVector *BaselineData = new DataVector;
   int usb = 0;
-  for(int i = 0; i<numUSB-numFanUSB; i++) {
+  for(int i = 0; i < num_nonFanUSB; i++) {
     OVUSBStream[Datamap[i]].GetBaselineData(BaselineData);
     CalculatePedestal(BaselineData,baselines);
     OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
@@ -867,6 +868,7 @@ static string cpp_sprintf(const char * format, ...)
   return buf;
 }
 
+// Return the name of the config table for this run.  Sets no globals.
 static char * get_config_table_name(mysqlpp::Connection & myconn)
 {
   char query_string[BUFSIZE];
@@ -890,7 +892,28 @@ static char * get_config_table_name(mysqlpp::Connection & myconn)
   return config_table;
 }
 
-// XXX this function is 450 lines long and does not have documented goals/outputs.
+// Return a list of distict USB serial numbers for the given config table.
+// If positiveHV is true, then require the HV column to be not -999, which
+// marks the USB as a Fan-In, whatever that is.  Sets no globals.
+static vector<int> get_distinct_usb_serials(mysqlpp::Connection & myconn,
+                                            const char * const config_table,
+                                            const bool positiveHV)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s %s ORDER BY USB_serial;",
+    config_table, positiveHV?"WHERE HV != -999":"");
+  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::StoreQueryResult res = query.store();
+  if(res.num_rows() < 1)
+    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
+  log_msg(LOG_INFO,"Found %u distinct %sUSBs in table %s\n",
+          res.num_rows(), positiveHV?"non-Fan-in ":"", config_table);
+  vector<int> serials;
+  for(unsigned int i = 0; i < res.num_rows(); i++)
+    serials.push_back(res[i][0]);
+  return serials;
+}
+
 // Database tables read from: OV_runsummary; whatever table OV_runsummary names
 // in config_table, such as online400; and OV_ebuilder.
 static void read_summary_table()
@@ -913,40 +936,22 @@ static void read_summary_table()
 
   const char * const config_table = get_config_table_name(myconn);
 
-  //////////////////////////////////////////////////////////////////////
-  // Count number of distinct USBs
-  char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s ORDER BY USB_serial;",
-    config_table);
-  mysqlpp::Query query3 = myconn.query(query_string);
-  mysqlpp::StoreQueryResult res=query3.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query3.error());
-  log_msg(LOG_INFO,"Found %ld distinct USBs in table %s\n",
-          (long int)res.num_rows(),config_table);
-  numUSB = (long int)res.num_rows();
+  const vector<int> usbserials = get_distinct_usb_serials(myconn, config_table, false);
+  numUSB = usbserials.size();
 
   map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
   for(int i = 0; i<numUSB; i++) {
-    USBmap[atoi(res[i][0])] = i;
-    OVUSBStream[i].SetUSB(atoi(res[i][0]));
+    USBmap[usbserials[i]] = i;
+    OVUSBStream[i].SetUSB(usbserials[i]);
   }
 
-  //////////////////////////////////////////////////////////////////////
-  // Count number of non fan-in USBs
-  sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s "
-    "WHERE HV != -999 ORDER BY USB_serial;", config_table);
-  mysqlpp::Query query4 = myconn.query(query_string);
-  res=query4.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query4.error());
-  log_msg(LOG_INFO,"Found %ld distinct non-Fan-in USBs in table %s\n",
-          (long int)res.num_rows(),config_table);
-  numFanUSB = numUSB - res.num_rows();
-  for(int i = 0; i<numUSB-numFanUSB; i++)
-    Datamap[i] = USBmap[atoi(res[i][0])];
+  const vector<int> nonfanin_usbserials =
+    get_distinct_usb_serials(myconn, config_table, true);
+
+  num_nonFanUSB = nonfanin_usbserials.size();
+
+  for(unsigned int i = 0; i < nonfanin_usbserials.size(); i++)
+    Datamap[i] = USBmap[nonfanin_usbserials[i]];
 
   // Identify Fan-in USBs -- FixME is this needed?
   for(map<int,int>::iterator USBmapIt = USBmap.begin();
@@ -965,10 +970,11 @@ static void read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Load the offsets for these boards
+  char query_string[BUFSIZE];
   sprintf(query_string,"SELECT USB_serial, board_number, offset FROM %s;",
     config_table);
   mysqlpp::Query query45 = myconn.query(query_string);
-  res=query45.store();
+  mysqlpp::StoreQueryResult res=query45.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n",
       query_string,query45.error());
@@ -1025,7 +1031,7 @@ static void read_summary_table()
   res=query6.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query3.error());
+      query_string,query6.error());
   log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
           (long int)res.num_rows(),config_table);
 
@@ -1440,7 +1446,7 @@ int main(int argc, char **argv)
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set Thresholds. Only for data streams
-  for(int i = 0; i<numUSB-numFanUSB; i++)
+  for(int i = 0; i < num_nonFanUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold,(int)EBTrigMode);
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
