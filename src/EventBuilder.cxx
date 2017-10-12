@@ -867,7 +867,6 @@ static void die_in_read_summary_table(const char * const format, ...)
 static void read_summary_table()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-  mysqlpp::StoreQueryResult res;
 
   char DCDatabase_path[BUFSIZE];
 
@@ -889,7 +888,7 @@ static void read_summary_table()
   sprintf(query_string,"SELECT Run_number,config_table FROM OV_runsummary "
     "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
   mysqlpp::Query query2 = myconn.query(query_string);
-  res = query2.store();
+  mysqlpp::StoreQueryResult res = query2.store();
   if(res.num_rows() < 1)
     die_in_read_summary_table("Found no matching entry for run %s in OV_runsummary\n",
       RunNumber.c_str());
@@ -1418,14 +1417,10 @@ int main(int argc, char **argv)
   DataVector MinDataVector; // DataVector of current minimum data packets
   vector<int> MinDataPacket; // Minimum and Last Data Packets added
   vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
-  int MinIndex; // index of minimum event added to USB stream
   int dataFile = 0; // output file descriptor
   string fname; // output file name
   string iname; // input file name
-  time_t timeout;
-  string tempfilename;
   int EventCounter = 0;
-  int status = 0;
 
   start_log(); // establish syslog connection
 
@@ -1436,22 +1431,22 @@ int main(int argc, char **argv)
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load baseline data
-  timeout = time(0);
+  time_t timeout = time(0);
   while(!GetBaselines()) { // Get baselines
     if((int)difftime(time(0),timeout) > MAXTIME) {
       log_msg(LOG_CRIT,"Error: Baseline data not found in the last %d seconds.\n",MAXTIME);
       write_ebretval(-1);
       return 127;
     }
-    else sleep(2); // FixME: optimize? -- never done for Double Chooz -- needed?
+    else{
+      sleep(2); // FixME: optimize? -- never done for Double Chooz -- needed?
+    }
   }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  // Set Thresholds
-  for(int i = 0; i<numUSB-numFanUSB; i++) {
-    // Set threshold only for data streams
+  // Set Thresholds. Only for data streams
+  for(int i = 0; i<numUSB-numFanUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold,(int)EBTrigMode);
-  }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Locate existing binary data and create output folder
@@ -1479,6 +1474,7 @@ int main(int argc, char **argv)
       while(!OVUSBStream[i].GetNextTimeStamp(DataVectorPtr)) {
         timeout = time(0);
 
+        int status = 0;
         while( (status = LoadAll(iname)) < 1 ) { // Try to find new files for each USB
           if(status == -1) {
             write_ebretval(-1);
@@ -1529,7 +1525,7 @@ int main(int argc, char **argv)
         //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         // Rename files
         for(int i = 0; i<numUSB; i++) {
-          tempfilename = OVUSBStream[i].GetFileName();
+          string tempfilename = OVUSBStream[i].GetFileName();
           size_t mypos = tempfilename.find("binary");
           if(mypos != tempfilename.npos)
             tempfilename.replace(mypos,6,"decoded");
@@ -1566,7 +1562,8 @@ int main(int argc, char **argv)
       dataFile = open_file(fname);
     }
 
-    MinIndex=0;
+    // index of minimum event added to USB stream
+    int MinIndex=0;
     for(int i=0; i < numUSB; i++) {
       CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
       if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) MinIndex = i;
