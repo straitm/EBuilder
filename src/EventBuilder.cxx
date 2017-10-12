@@ -68,7 +68,6 @@ static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
 static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
 static string DataFolder; // Path to data hard-coded
 static string OutputFolder; // Default output data path hard-coded
-static int Disk=2; // default location of OV DAQ data: /data2
 static long int EBcomment = 0;
 static int SubRunCounter = 0;
 
@@ -543,7 +542,7 @@ static bool parse_options(int argc, char **argv)
   if(argc <= 1) goto fail;
 
   char c;
-  while ((c = getopt (argc, argv, "d:r:t:T:R:H:e:h:")) != -1) {
+  while ((c = getopt (argc, argv, "r:t:T:R:H:e:h:")) != -1) {
     char buf[BUFSIZE];
 
     switch (c) {
@@ -552,7 +551,6 @@ static bool parse_options(int argc, char **argv)
     case 'H': strcpy(buf,optarg); OVDAQHost = buf; break;
     case 'R': strcpy(buf,optarg); OVRunType = buf;  break;
 
-    case 'd': Disk = atoi(optarg); break;
     case 't': Threshold = atoi(optarg); break;
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
     case 'e': OutDisk = atoi(optarg); break;
@@ -584,7 +582,6 @@ static bool parse_options(int argc, char **argv)
   printf("Usage: %s -r <run_number> [-d <data_disk>]\n"
          "      [-t <offline_threshold>] [-T <offline_trigger_mode>] [-R <run_type>]\n"
          "      [-H <OV_DAQ_data_mount_point>] [-e <EBuilder_output_disk>]\n"
-         "-d : disk number of OV DAQ data to be processed [default: 2]\n"
          "-r : expected run # for incoming data\n"
          "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
          "-t : offline threshold (ADC counts) to apply\n"
@@ -1067,10 +1064,10 @@ static void read_summary_table()
   if(atoi(res[0][5]) != 1 && atoi(res[0][5]) != 2) // Data Disk
     die_in_read_summary_table("MySQL query error: could not retrieve "
       "data disk for Run: %s\n",RunNumber.c_str());
-  Disk = atoi(res[0][5]);
+  const int disk = atoi(res[0][5]);
 
   // Assign output folder based on disk number
-  DataFolder = cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), Disk, "OVDAQ/DATA");
+  DataFolder = cpp_sprintf("/%s/data%d/%s", OVdAQHost.c_str(), disk, "OVDAQ/DATA");
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
