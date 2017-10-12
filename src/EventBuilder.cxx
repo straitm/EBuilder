@@ -235,7 +235,7 @@ static bool LoadRun(string &binary_dir)
 
   sort(files.begin(),files.end());
 
-  string TempProcessedOutput = OutputFolder + "/processed";
+  const string TempProcessedOutput = OutputFolder + "/processed";
   umask(0);
   if(mkdir(OutputFolder.c_str(), 0777)) {
     if(EBRunMode != kRecovery) {
@@ -863,6 +863,17 @@ static void die_in_read_summary_table(const char * const format, ...)
   exit(127);
 }
 
+// Like sprintf(), but returns a std::string instead of writing into a
+// character buffer.  Truncates the string at BUFSIZE.
+static string cpp_sprintf(const char * format, ...)
+{
+  va_list ap;
+  va_start(ap, format);
+  char buf[BUFSIZE];
+  vsnprintf(buf, BUFSIZE, format, ap);
+  return buf;
+}
+
 // XXX this function is 450 lines long and does not have documented goals/outputs.
 static void read_summary_table()
 {
@@ -1047,9 +1058,7 @@ static void read_summary_table()
     die_in_read_summary_table("MySQL Run Type: %s does not match command line "
       "Run Type: %s\n", res[0][1].c_str(),OVRunType.c_str());
 
-  char tmpoutdir[BUFSIZE];
-  sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
-  const string OutputDir = tmpoutdir;
+  const string OutputDir = cpp_sprintf("/data%d/OVDAQ/",OutDisk);
   OutputFolder = OutputDir + "DATA/";
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1059,11 +1068,8 @@ static void read_summary_table()
       "data disk for Run: %s\n",RunNumber.c_str());
   Disk = atoi(res[0][5]);
 
-  {
-    char buf[BUFSIZE]; // Assign output folder based on disk number
-    sprintf(buf, "/%s/data%d/%s", OVDAQHost.c_str(), Disk, "OVDAQ/DATA");
-    DataFolder = buf;
-  }
+  // Assign output folder based on disk number
+  DataFolder = cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), Disk, "OVDAQ/DATA");
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
@@ -1133,7 +1139,6 @@ static void read_summary_table()
   // Connect to EBuilder MySQL table
   if(EBRunMode == kReprocess) {
     umask(0);
-    char tempfolder[BUFSIZE];
 
     sprintf(query_string,"SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
             RunNumber.c_str());
@@ -1146,8 +1151,7 @@ static void read_summary_table()
         query_string,query2.error(),RunNumber.c_str());
 
     if(res2.num_rows() == 1) { // Run has never been reprocessed
-      sprintf(tempfolder,"%sREP/Run_%s",OutputDir.c_str(),RunNumber.c_str());
-      OutputFolder = tempfolder;
+      OutputFolder = cpp_sprintf("%sREP/Run_%s", OutputDir.c_str(), RunNumber.c_str());
       if(mkdir(OutputFolder.c_str(), 0777)) {
         if(errno != EEXIST)
           die_in_read_summary_table("Error (%d) creating output folder %s\n",
@@ -1156,8 +1160,6 @@ static void read_summary_table()
                 OutputFolder.c_str());
       }
     }
-
-    string Path = "";
 
     sprintf(query_string,"SELECT Path, ENTRY FROM OV_ebuilder "
       "WHERE Run_number = '%s' and SW_Threshold = "
@@ -1171,7 +1173,7 @@ static void read_summary_table()
     // Run has already been reprocessed with same configuration
     if(res3.num_rows() > 0) {
       Repeat = true;
-      Path = res3[0][0].c_str();
+      const string Path = res3[0][0].c_str();
       log_msg(LOG_WARNING, "Same reprocessing configuration found "
               "for run %s at %s. Deleting...\n", RunNumber.c_str(),Path.c_str());
 
@@ -1211,9 +1213,8 @@ static void read_summary_table()
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Create folder based on parameters
-    sprintf(tempfolder,"%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
-            OutputDir.c_str(),RunNumber.c_str(),(int)EBTrigMode,Threshold,0,0);
-    OutputFolder = tempfolder;
+    OutputFolder = cpp_sprintf("%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
+      OutputDir.c_str(), RunNumber.c_str(), (int)EBTrigMode, Threshold, 0, 0);
     if(mkdir(OutputFolder.c_str(), 0777)) {
       if(errno != EEXIST)
         die_in_read_summary_table("Error (%d) creating output folder %s\n",
