@@ -50,19 +50,20 @@ static string OVDAQHost = "dcfovdaq";
 static int OutDisk=1; // default output location of OV Ebuilder: /data1
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
-// Set in read_summary_table()
+// Set in read_summary_table() just to get the other stuff
 static char server[BUFSIZE] = {0};
 static char username[BUFSIZE] = {0};
 static char password[BUFSIZE] = {0};
 static char database[BUFSIZE] = {0};
+
+// Set in read_summary_table() and used throughout
+// Set directly
 static int numUSB = 0;
 static int numFanUSB = 0;
+
 static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
                              // USBs to all numerical ordering of all USBs
 static map<int,int*> pmtoffsets; // Map to hold offsets for each PMT board
-static bool *overflow; // Keeps track of sync overflows for all boards
-static long int *maxcount_16ns_lo; // Keeps track of max clock count
-static long int *maxcount_16ns_hi; // for sync overflows for all boards
 static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                   // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
@@ -70,6 +71,11 @@ static string DataFolder; // Path to data hard-coded
 static string OutputFolder; // Default output data path hard-coded
 static long int EBcomment = 0;
 static int SubRunCounter = 0;
+
+// *Size* set in read_summary_table()
+static bool *overflow; // Keeps track of sync overflows for all boards
+static long int *maxcount_16ns_lo; // Keeps track of max clock count
+static long int *maxcount_16ns_hi; // for sync overflows for all boards
 
 // set in read_summary_table() and main()
 static RunMode EBRunMode = kNormal;
@@ -444,9 +450,7 @@ static void BuildEvent(DataVector *OutDataVector,
       for(int w = 0; w < nwords - 3 ; w++) { // fan-in packets have length=6
         int temp = CurrentOutDataVectorIt->at(7+w) + 0;
         for(int n = 0; n < 16; n++) {
-          if(temp & 1) {
-            k++;
-          }
+          if(temp & 1) k++;
           temp >>= 1;
         }
       }
@@ -603,9 +607,7 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
   int channel, charge, module, type;
   channel = charge = module = 0;
 
-  DataVector::iterator BaselineDataIt;
-
-  for(BaselineDataIt = BaselineData->begin();
+  for(DataVector::iterator BaselineDataIt = BaselineData->begin();
       BaselineDataIt != BaselineData->end();
       BaselineDataIt++) {
 
@@ -636,11 +638,9 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
     }
   }
 
-  for(int i = 0; i < maxModules; i++) {
-    for( int j = 0; j < numChannels; j++) {
+  for(int i = 0; i < maxModules; i++)
+    for( int j = 0; j < numChannels; j++)
       *(*(baseptr+i) + j) = (int)baseline[i][j];
-    }
-  }
 }
 
 static bool WriteBaselineTable(int **baseptr, int usb)
@@ -927,7 +927,7 @@ static void read_summary_table()
 
   map<int,int> USBmap; // Maps USB number to numerical ordering of all USBs
   for(int i = 0; i<numUSB; i++) {
-    USBmap[atoi(res[i][0])]=i;
+    USBmap[atoi(res[i][0])] = i;
     OVUSBStream[i].SetUSB(atoi(res[i][0]));
   }
 
@@ -947,12 +947,14 @@ static void read_summary_table()
     Datamap[i] = USBmap[atoi(res[i][0])];
 
   // Identify Fan-in USBs -- FixME is this needed?
-  map<int,int>::iterator USBmapIt,DatamapIt;
-  for(USBmapIt = USBmap.begin(); USBmapIt!=USBmap.end(); USBmapIt++) {
+  for(map<int,int>::iterator USBmapIt = USBmap.begin();
+      USBmapIt != USBmap.end(); USBmapIt++) {
     bool PMTUSBFound = false;
-    for(DatamapIt = Datamap.begin(); DatamapIt!=Datamap.end(); DatamapIt++)
+    for(map<int,int>::iterator DatamapIt = Datamap.begin();
+        DatamapIt != Datamap.end(); DatamapIt++)
       if(USBmapIt->second == DatamapIt->second)
         PMTUSBFound = true;
+
     if(!PMTUSBFound) {
       OVUSBStream[USBmapIt->second].SetIsFanUSB();
       log_msg(LOG_INFO,"USB %d identified as Fan-in USB\n",USBmapIt->first);
@@ -977,8 +979,9 @@ static void read_summary_table()
     if(atoi(res[i][1]) < maxModules)
       *(pmtoffsets[atoi(res[i][0])]+atoi(res[i][1])) = atoi(res[i][2]);
   }
-  map<int,int*>::iterator pmtoffsetsIt; // USB to array of PMT offsets
-  for(pmtoffsetsIt = pmtoffsets.begin();
+
+  // USB to array of PMT offsets
+  for(map<int,int*>::iterator pmtoffsetsIt = pmtoffsets.begin();
       pmtoffsetsIt != pmtoffsets.end();
       pmtoffsetsIt++)
     OVUSBStream[USBmap[pmtoffsetsIt->first]].SetOffset(pmtoffsetsIt->second);
@@ -1067,7 +1070,7 @@ static void read_summary_table()
   const int disk = atoi(res[0][5]);
 
   // Assign output folder based on disk number
-  DataFolder = cpp_sprintf("/%s/data%d/%s", OVdAQHost.c_str(), disk, "OVDAQ/DATA");
+  DataFolder = cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), disk, "OVDAQ/DATA");
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
