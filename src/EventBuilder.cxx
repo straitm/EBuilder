@@ -847,7 +847,7 @@ static bool write_ebsummary()
   return true;
 }
 
-static void die_in_read_summary_table(const char * const format, ...)
+static void die_with_log(const char * const format, ...)
 {
   va_list ap;
   va_start(ap, format);
@@ -867,7 +867,32 @@ static string cpp_sprintf(const char * format, ...)
   return buf;
 }
 
+static char * get_config_table_name(mysqlpp::Connection & myconn)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string,"SELECT config_table FROM OV_runsummary "
+    "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
+  const mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
+  if(res.num_rows() < 1)
+    die_with_log("Found no matching entry for run %s in OV_runsummary\n",
+      RunNumber.c_str());
+  else if(res.num_rows() > 1)
+    // Really using the most recent entry?  I think res[0] probably means
+    // the oldest entry, but I'm not sure.
+    log_msg(LOG_WARNING, "Found more than one entry for run %s "
+      "in OV_runsummary. Using most recent entry.\n",RunNumber.c_str());
+  else
+    log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
+      RunNumber.c_str());
+
+  static char config_table[BUFSIZE];
+  strcpy(config_table,res[0][0].c_str());
+  return config_table;
+}
+
 // XXX this function is 450 lines long and does not have documented goals/outputs.
+// Database tables read from: OV_runsummary; whatever table OV_runsummary names
+// in config_table, such as online400; and OV_ebuilder.
 static void read_summary_table()
 {
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
@@ -883,38 +908,20 @@ static void read_summary_table()
   sprintf(database,"%s",config_string(DCDatabase_path,"DCDB_OV_DBNAME"));
 
   if(!myconn.connect(database, server, username, password))
-    die_in_read_summary_table("Cannot connect to MySQL database %s at %s\n",
+    die_with_log("Cannot connect to MySQL database %s at %s\n",
       database,server);
 
-  //////////////////////////////////////////////////////////////////////
-  // Get mysql config table name
-  char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT Run_number,config_table FROM OV_runsummary "
-    "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
-  mysqlpp::Query query2 = myconn.query(query_string);
-  mysqlpp::StoreQueryResult res = query2.store();
-  if(res.num_rows() < 1)
-    die_in_read_summary_table("Found no matching entry for run %s in OV_runsummary\n",
-      RunNumber.c_str());
-
-  if(res.num_rows() > 1)
-    log_msg(LOG_WARNING, "Found more than one entry for run %s "
-      "in OV_runsummary. Using most recent entry.\n",RunNumber.c_str());
-  else
-    log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
-      RunNumber.c_str());
-
-  char config_table[BUFSIZE];
-  strcpy(config_table,res[0][1].c_str());
+  const char * const config_table = get_config_table_name(myconn);
 
   //////////////////////////////////////////////////////////////////////
   // Count number of distinct USBs
+  char query_string[BUFSIZE];
   sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s ORDER BY USB_serial;",
     config_table);
   mysqlpp::Query query3 = myconn.query(query_string);
-  res=query3.store();
+  mysqlpp::StoreQueryResult res=query3.store();
   if(res.num_rows() < 1)
-    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+    die_with_log("MySQL query (%s) error: %s\n",
       query_string,query3.error());
   log_msg(LOG_INFO,"Found %ld distinct USBs in table %s\n",
           (long int)res.num_rows(),config_table);
@@ -933,7 +940,7 @@ static void read_summary_table()
   mysqlpp::Query query4 = myconn.query(query_string);
   res=query4.store();
   if(res.num_rows() < 1)
-    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+    die_with_log("MySQL query (%s) error: %s\n",
       query_string,query4.error());
   log_msg(LOG_INFO,"Found %ld distinct non-Fan-in USBs in table %s\n",
           (long int)res.num_rows(),config_table);
@@ -963,7 +970,7 @@ static void read_summary_table()
   mysqlpp::Query query45 = myconn.query(query_string);
   res=query45.store();
   if(res.num_rows() < 1)
-    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+    die_with_log("MySQL query (%s) error: %s\n",
       query_string,query45.error());
   log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
 
@@ -987,7 +994,7 @@ static void read_summary_table()
   mysqlpp::Query query5 = myconn.query(query_string);
   res=query5.store();
   if(res.num_rows() < 1)
-    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+    die_with_log("MySQL query (%s) error: %s\n",
       query_string,query5.error());
   log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
           (long int)res.num_rows(),config_table);
@@ -1017,13 +1024,13 @@ static void read_summary_table()
   mysqlpp::Query query6 = myconn.query(query_string);
   res=query6.store();
   if(res.num_rows() < 1)
-    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+    die_with_log("MySQL query (%s) error: %s\n",
       query_string,query3.error());
   log_msg(LOG_INFO,"Found %ld distinct PMT boards in table %s\n",
           (long int)res.num_rows(),config_table);
 
   if((int)res.num_rows() != totalboards) // config table has duplicate entries
-    die_in_read_summary_table("Found duplicate pmtboard_u entries in table %s\n",
+    die_with_log("Found duplicate pmtboard_u entries in table %s\n",
             config_table);
 
   // This is a temporary internal mapping used only by the EBuilder
@@ -1039,7 +1046,7 @@ static void read_summary_table()
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
   if(res.num_rows() < 1)
-    die_in_read_summary_table("MySQL query (%s) error: %s\n",
+    die_with_log("MySQL query (%s) error: %s\n",
       query_string,query.error());
   if(res.num_rows() > 1) // Check that OVRunType is the same
     log_msg(LOG_WARNING, "Found more than one entry for run %s in "
@@ -1051,7 +1058,7 @@ static void read_summary_table()
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set the Data Folder and Ouput Dir
   if(OVRunType != res[0][1].c_str())
-    die_in_read_summary_table("MySQL Run Type: %s does not match command line "
+    die_with_log("MySQL Run Type: %s does not match command line "
       "Run Type: %s\n", res[0][1].c_str(),OVRunType.c_str());
 
   const string OutputDir = cpp_sprintf("/data%d/OVDAQ/",OutDisk);
@@ -1060,7 +1067,7 @@ static void read_summary_table()
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Locate OV binary data
   if(atoi(res[0][5]) != 1 && atoi(res[0][5]) != 2) // Data Disk
-    die_in_read_summary_table("MySQL query error: could not retrieve "
+    die_with_log("MySQL query error: could not retrieve "
       "data disk for Run: %s\n",RunNumber.c_str());
   const int disk = atoi(res[0][5]);
 
@@ -1077,7 +1084,7 @@ static void read_summary_table()
     // False if non-baseline files are found
     if(GetDir(BinaryDir, initial_files, 0, 0)) {
       if(errno)
-        die_in_read_summary_table("Error(%d) opening directory %s\n",
+        die_with_log("Error(%d) opening directory %s\n",
           errno,BinaryDir.c_str());
       if(!res[0][8].is_null()){ // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
@@ -1099,7 +1106,7 @@ static void read_summary_table()
   // Check if original run already used these parameters. No reprocess.
   if(EBRunMode == kReprocess) {
     if(atoi(res[0][2]) == Threshold && (TriggerMode)atoi(res[0][3]) == EBTrigMode)
-      die_in_read_summary_table("MySQL running parameters match "
+      die_with_log("MySQL running parameters match "
         "reprocessing parameters. Threshold: %04d\tTrigger type: %01d\n",
         Threshold, (int)EBTrigMode);
   }
@@ -1107,7 +1114,7 @@ static void read_summary_table()
     if(res[0][1].c_str() != OVRunType ||
        atoi(res[0][2]) != Threshold ||
        atoi(res[0][3]) != (int)EBTrigMode)
-      die_in_read_summary_table("MySQL parameters do not match recovery "
+      die_with_log("MySQL parameters do not match recovery "
         "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d\n",
         OVRunType.c_str(),Threshold, (int)EBTrigMode);
     if(!res[0][7].is_null()) SubRunCounter = timestampsperoutput*atoi(res[0][7]);
@@ -1117,7 +1124,7 @@ static void read_summary_table()
   // Get EBuilder parameters from MySQL database
   if(EBRunMode != kReprocess) {
     if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) // Sanity check
-      die_in_read_summary_table("Invalid EBTrigMode: %01d\n",EBTrigMode);
+      die_with_log("Invalid EBTrigMode: %01d\n",EBTrigMode);
 
     if(EBTrigMode != (TriggerMode)atoi(res[0][3]))
       log_msg(LOG_WARNING, "Trigger Mode requested (%d) will "
@@ -1143,7 +1150,7 @@ static void read_summary_table()
     mysqlpp::StoreQueryResult res2 = query2.store();
 
     if(res2.num_rows() == 0) // Can't find run in OV_ebuilder
-      die_in_read_summary_table("MySQL query (%s) error: %s\n"
+      die_with_log("MySQL query (%s) error: %s\n"
         "EBuilder did not finish processing run %s. Run recovery mode first.\n",
         query_string,query2.error(),RunNumber.c_str());
 
@@ -1151,7 +1158,7 @@ static void read_summary_table()
       OutputFolder = cpp_sprintf("%sREP/Run_%s", OutputDir.c_str(), RunNumber.c_str());
       if(mkdir(OutputFolder.c_str(), 0777)) {
         if(errno != EEXIST)
-          die_in_read_summary_table("Error (%d) creating output folder %s\n",
+          die_with_log("Error (%d) creating output folder %s\n",
                   errno,OutputFolder.c_str());
         log_msg(LOG_WARNING, "Output folder %s already exists.\n",
                 OutputFolder.c_str());
@@ -1181,31 +1188,31 @@ static void read_summary_table()
       string tempdir = Path + "Run_" + RunNumber + "/processed";
       if(GetDir(tempdir, old_files, 1))
         if(errno)
-          die_in_read_summary_table("Error(%d) opening directory %s\n",
+          die_with_log("Error(%d) opening directory %s\n",
                   errno,tempdir.c_str());
 
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
         if(remove(tempfile.c_str()))
-          die_in_read_summary_table("Error deleting file %s\n",tempfile.c_str());
+          die_with_log("Error deleting file %s\n",tempfile.c_str());
       }
       if(rmdir(tempdir.c_str()))
-        die_in_read_summary_table("Error deleting folder %s\n",tempdir.c_str());
+        die_with_log("Error deleting folder %s\n",tempdir.c_str());
       old_files.clear();
 
       tempdir = Path + "Run_" + RunNumber;
       if(GetDir(tempdir, old_files, 1))
         if(errno)
-          die_in_read_summary_table("Error(%d) opening directory %s\n",
+          die_with_log("Error(%d) opening directory %s\n",
                   errno,tempdir.c_str());
 
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
         if(remove(tempfile.c_str()))
-          die_in_read_summary_table("Error deleting file %s\n",tempfile.c_str());
+          die_with_log("Error deleting file %s\n",tempfile.c_str());
       }
       if(rmdir(tempdir.c_str()))
-        die_in_read_summary_table("Error deleting folder %s\n",tempdir.c_str());
+        die_with_log("Error deleting folder %s\n",tempdir.c_str());
     }
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1214,7 +1221,7 @@ static void read_summary_table()
       OutputDir.c_str(), RunNumber.c_str(), (int)EBTrigMode, Threshold, 0, 0);
     if(mkdir(OutputFolder.c_str(), 0777)) {
       if(errno != EEXIST)
-        die_in_read_summary_table("Error (%d) creating output folder %s\n",
+        die_with_log("Error (%d) creating output folder %s\n",
                 errno,OutputFolder.c_str());
       log_msg(LOG_WARNING, "Output folder %s already exists.\n",
         OutputFolder.c_str());
@@ -1224,7 +1231,7 @@ static void read_summary_table()
   myconn.disconnect();
 
   if(!Repeat && !write_ebsummary())
-    die_in_read_summary_table("!Repeat && !write_ebsummary\n");
+    die_with_log("!Repeat && !write_ebsummary\n");
 
   if(EBRunMode != kNormal) {
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1232,9 +1239,9 @@ static void read_summary_table()
     initial_files.clear();
     if(GetDir(decoded_dir, initial_files, 1)) {
       if(errno)
-        die_in_read_summary_table("Error (%d) opening directory %s\n",
+        die_with_log("Error (%d) opening directory %s\n",
                 errno,decoded_dir.c_str());
-      die_in_read_summary_table("No decoded files found in directory %s\n",
+      die_with_log("No decoded files found in directory %s\n",
         decoded_dir.c_str());
     }
     sort(initial_files.begin(),initial_files.end());
@@ -1244,7 +1251,7 @@ static void read_summary_table()
     vector<string>::iterator fname_begin=initial_files.begin();
     const string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
     if(fname_begin->find(fdelim) == fname_begin->npos)
-      die_in_read_summary_table("Error: Cannot find '_' in file name\n");
+      die_with_log("Error: Cannot find '_' in file name\n");
     const size_t fname_it_delim = fname_begin->find(fdelim);
 
     vector<string> myfiles[maxUSB];
@@ -1282,14 +1289,14 @@ static void read_summary_table()
       {
         const size_t pos = fname.find("decoded");
         if(pos == string::npos)
-          die_in_read_summary_table("Unexpected decoded-data file name: %s\n",
+          die_with_log("Unexpected decoded-data file name: %s\n",
             fname.c_str());
         fname.replace(pos,sizeof("decoded")-1,"binary");
       }
       {
         const size_t pos = fname.find(".done");
         if(pos == string::npos)
-          die_in_read_summary_table("Unexpected decoded-data file name: %s\n",
+          die_with_log("Unexpected decoded-data file name: %s\n",
             fname.c_str());
         fname.replace(pos,sizeof(".done")-1,"");
       }
