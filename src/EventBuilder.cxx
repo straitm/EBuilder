@@ -20,6 +20,11 @@ using namespace std;
 enum RunMode {kNormal, kRecovery, kReprocess};
 enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 
+// Just a little convenience for reading from the database
+struct usb_sbo{
+  int serial, board, offset;
+};
+
 // Consts
 static const int maxUSB=10; // Maximum number of USB streams
 static const int latency=5; // Seconds before DAQ switches files.
@@ -916,6 +921,31 @@ static vector<int> get_distinct_usb_serials(mysqlpp::Connection & myconn,
   return serials;
 }
 
+// Return a vector of {serial numbers, board numbers, time offsets} for
+// all USBs in the given table.  Sets no globals.
+static vector<usb_sbo> get_sbos(mysqlpp::Connection & myconn,
+                                const char * const config_table)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string,"SELECT USB_serial, board_number, offset FROM %s;",
+    config_table);
+  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::StoreQueryResult res=query.store();
+  if(res.num_rows() < 1)
+    die_with_log("MySQL query (%s) error: %s\n", query_string,query.error());
+  log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
+
+  vector<usb_sbo> sbos;
+  for(unsigned int i = 0; i < res.num_rows(); i++){
+    usb_sbo sbo;
+    sbo.serial = atoi(res[i][0]);
+    sbo.board  = atoi(res[i][1]);
+    sbo.offset = atoi(res[i][2]);
+  }
+  return sbos;
+}
+
+
 // Database tables read from: OV_runsummary; whatever table OV_runsummary names
 // in config_table, such as online400; and OV_ebuilder.
 static void read_summary_table()
@@ -958,37 +988,29 @@ static void read_summary_table()
   for(unsigned int i = 0; i < nonfanin_serials.size(); i++)
     Datamap[i] = usbmap[nonfanin_serials[i]];
 
-  //////////////////////////////////////////////////////////////////////
-  // Load the offsets for these boards
-  char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT USB_serial, board_number, offset FROM %s;",
-    config_table);
-  mysqlpp::Query query45 = myconn.query(query_string);
-  mysqlpp::StoreQueryResult res=query45.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query45.error());
-  log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
+  // Load the time offsets for these boards
+  {
+    const vector<usb_sbo> sbos = get_sbos(myconn, config_table);
 
-  // Create map of UBS_serial to array of pmt board offsets
-  for(int i = 0; i<(int)res.num_rows(); i++) {
-    if(!PMTOffsets.count(atoi(res[i][0])))
-      PMTOffsets[atoi(res[i][0])] = new int[maxModules];
-    if(atoi(res[i][1]) < maxModules)
-      *(PMTOffsets[atoi(res[i][0])] + atoi(res[i][1])) = atoi(res[i][2]);
+    // Create map of UBS_serial to array of pmt board offsets
+    for(unsigned int i = 0; i < sbos.size(); i++) {
+      if(!PMTOffsets.count(sbos[i].serial))
+        PMTOffsets[sbos[i].serial] = new int[maxModules];
+      if(sbos[i].board < maxModules)
+        PMTOffsets[sbos[i].serial][sbos[i].board] = sbos[i].offset;
+    }
   }
 
   // USB to array of PMT offsets
-  for(map<int,int*>::iterator pmtoffsetsIt = PMTOffsets.begin();
-      pmtoffsetsIt != PMTOffsets.end();
-      pmtoffsetsIt++)
-    OVUSBStream[usbmap[pmtoffsetsIt->first]].SetOffset(pmtoffsetsIt->second);
+  for(map<int,int*>::iterator os = PMTOffsets.begin(); os != PMTOffsets.end(); os++)
+    OVUSBStream[usbmap[os->first]].SetOffset(os->second);
 
   //////////////////////////////////////////////////////////////////////
   // Count the number of boards in this setup
+  char query_string[BUFSIZE];
   sprintf(query_string,"SELECT DISTINCT pmtboard_u FROM %s;",config_table);
   mysqlpp::Query query5 = myconn.query(query_string);
-  res=query5.store();
+  mysqlpp::StoreQueryResult res=query5.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n",
       query_string,query5.error());
