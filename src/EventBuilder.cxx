@@ -1043,23 +1043,12 @@ static void read_summary_table()
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set the Data Folder and Ouput Dir
-  if(OVRunType.compare(res[0][1].c_str()) != 0)
+  if(OVRunType != res[0][1].c_str())
     die_in_read_summary_table("MySQL Run Type: %s does not match command line "
       "Run Type: %s\n", res[0][1].c_str(),OVRunType.c_str());
 
   char tmpoutdir[BUFSIZE];
-  if(OVRunType.compare("P") == 0) {
-    DataFolder = "OVDAQ/DATA";
-    sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
-  }
-  else if(OVRunType.compare("C") == 0) {
-    DataFolder = "OVDAQ/DATA";
-    sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
-  }
-  else { // DEBUG mode
-    DataFolder = "OVDAQ/DATA";
-    sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
-  }
+  sprintf(tmpoutdir,"/data%d/OVDAQ/",OutDisk);
   const string OutputDir = tmpoutdir;
   OutputFolder = OutputDir + "DATA/";
 
@@ -1070,7 +1059,7 @@ static void read_summary_table()
       "data disk for Run: %s\n",RunNumber.c_str());
   Disk = atoi(res[0][5]);
   char inpath[BUFSIZE]; // Assign output folder based on disk number
-  sprintf(inpath,"/%s/data%d/%s",OVDAQHost.c_str(),Disk,DataFolder.c_str());
+  sprintf(inpath,"/%s/data%d/%s",OVDAQHost.c_str(),Disk,"OVDAQ/DATA");
   DataFolder = inpath;
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
