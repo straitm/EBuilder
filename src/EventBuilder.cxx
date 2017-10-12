@@ -20,16 +20,21 @@ using namespace std;
 enum RunMode {kNormal, kRecovery, kReprocess};
 enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 
-// Just a little convenience struct for reading from the database
+// Just little convenience structs for reading from the database
 struct usb_sbop{
   int serial, board, offset, pmtboard_u;
+};
+
+struct some_run_info{
+  int daqdisk, ebcomment, ebsubrun;
+  bool has_ebcomment, has_ebsubrun, has_stoptime;
 };
 
 // Consts
 static const int maxUSB=10; // Maximum number of USB streams
 static const int latency=5; // Seconds before DAQ switches files.
                             // FixME: 5 anticipated for far detector
-static const int timestampsperoutput = 5;
+static const int timestampsperoutput = 5; // XXX what?
 static const int numChannels=64; // Number of channels in M64
 static const int maxModules=64; // Maximum number of modules PER USB
                                 // (okay if less than total number of modules)
@@ -968,6 +973,72 @@ static std::pair<int, int> board_count(mysqlpp::Connection & myconn,
   return std::pair<int, int>(res.num_rows(), max);
 }
 
+// Gets the necessary run info from the run summary table, does some checking,
+// and returns the values that will be used to set globals.  No globals set here.
+static some_run_info get_some_run_info(mysqlpp::Connection & myconn)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string, "SELECT Run_Type,SW_Threshold,"
+    "SW_TriggerMode,daq_disk,EBcomment,EBsubrunnumber,stop_time"
+    "FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
+    RunNumber.c_str());
+  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::StoreQueryResult res = query.store();
+  if(res.num_rows() < 1)
+    die_with_log("MySQL query (%s) error: %s\n", query_string,query.error());
+  if(res.num_rows() > 1) // Check that OVRunType is the same
+    log_msg(LOG_WARNING, "Found more than one entry for run %s in "
+      "OV_runsummary. Using most recent entry\n",RunNumber.c_str());
+  else
+    log_msg(LOG_INFO,"Found MySQL run summary entry for run: %s\n",
+            RunNumber.c_str());
+
+  if(OVRunType != res[0][0].c_str())
+    die_with_log("MySQL Run Type: %s does not match command line "
+      "Run Type: %s\n", res[0][0].c_str(),OVRunType.c_str());
+
+  // Sanity check for each run mode
+  if(EBRunMode == kReprocess &&
+     atoi(res[0][1]) == Threshold && (TriggerMode)atoi(res[0][2]) == EBTrigMode)
+    die_with_log("MySQL running parameters match "
+      "reprocessing parameters. Threshold: %04d\tTrigger type: %01d\n",
+      Threshold, (int)EBTrigMode);
+
+  if(EBRunMode == kRecovery &&
+    (res[0][0].c_str() != OVRunType ||
+       atoi(res[0][1]) != Threshold ||
+       atoi(res[0][2]) != (int)EBTrigMode))
+    die_with_log("MySQL parameters do not match recovery "
+      "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d\n",
+      OVRunType.c_str(), Threshold, (int)EBTrigMode);
+
+  if(EBRunMode != kReprocess) {
+    // XXX except then it isn't actually changed
+    if(EBTrigMode != (TriggerMode)atoi(res[0][2]))
+      log_msg(LOG_WARNING, "Trigger Mode requested (%d) will "
+        "override MySQL setting (%d)\n", (int)EBTrigMode, atoi(res[0][2]));
+
+    // XXX except then it isn't actually changed
+    if(Threshold != atoi(res[0][1]))
+      log_msg(LOG_WARNING, "Threshold requested (%d) will override "
+        "MySQL setting (%d)\n", Threshold, atoi(res[0][1]));
+
+    printf("Threshold: %d \t EBTrigMode: %d\n", Threshold, EBTrigMode);
+  }
+
+  some_run_info info;
+  info.daqdisk      = atoi(res[0][3]);
+  if((info.has_ebcomment = !res[0][4].is_null())) info.ebcomment = atoi(res[0][4]);
+  if((info.has_ebsubrun  = !res[0][5].is_null())) info.ebsubrun  = atoi(res[0][5]);
+  info.has_stoptime     = !res[0][6].is_null();
+
+  if(info.daqdisk != 1 && info.daqdisk != 2)
+    die_with_log("MySQL query error: could not retrieve "
+      "data disk for run: %s\n", RunNumber.c_str());
+
+  return info;
+}
+
 // Database tables read from: OV_runsummary; whatever table OV_runsummary names
 // in config_table, such as online400; and OV_ebuilder.
 static void read_summary_table()
@@ -1046,104 +1117,45 @@ static void read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT Run_number,Run_Type,SW_Threshold,"
-    "SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,stop_time"
-    "FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
-    RunNumber.c_str());
-  mysqlpp::Query query = myconn.query(query_string);
-  mysqlpp::StoreQueryResult res = query.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n",
-      query_string,query.error());
-  if(res.num_rows() > 1) // Check that OVRunType is the same
-    log_msg(LOG_WARNING, "Found more than one entry for run %s in "
-      "OV_runsummary. Using most recent entry\n",RunNumber.c_str());
-  else
-    log_msg(LOG_INFO,"Found MySQL run summary entry for run: %s\n",
-            RunNumber.c_str());
+
+  const some_run_info runinfo = get_some_run_info(myconn);
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set the Data Folder and Ouput Dir
-  if(OVRunType != res[0][1].c_str())
-    die_with_log("MySQL Run Type: %s does not match command line "
-      "Run Type: %s\n", res[0][1].c_str(),OVRunType.c_str());
-
   const string OutputDir = cpp_sprintf("/data%d/OVDAQ/",OutDisk);
   OutputFolder = OutputDir + "DATA/";
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  // Locate OV binary data
-  if(atoi(res[0][5]) != 1 && atoi(res[0][5]) != 2) // Data Disk
-    die_with_log("MySQL query error: could not retrieve "
-      "data disk for Run: %s\n",RunNumber.c_str());
-  const int disk = atoi(res[0][5]);
-
   // Assign output folder based on disk number
   const string datadir =
-    cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), disk, "OVDAQ/DATA");
+    cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), runinfo.daqdisk, "OVDAQ/DATA");
   BinaryDir = datadir + "/Run_" + RunNumber + "/binary/";
   const string decoded_dir = datadir + "/Run_" + RunNumber + "/decoded/";
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
   vector<string> initial_files;
-  if(!res[0][6].is_null()) { // EBcomment filled each successful write attempt
+  if(runinfo.has_ebcomment) { // EBcomment filled each successful write attempt
     // False if non-baseline files are found
     if(GetDir(BinaryDir, initial_files, 0, 0)) {
       if(errno)
-        die_with_log("Error(%d) opening directory %s\n",
-          errno,BinaryDir.c_str());
-      if(!res[0][8].is_null()){ // stop_time has been filled and so was a successful run
+        die_with_log("Error(%d) opening directory %s\n", errno,BinaryDir.c_str());
+      if(runinfo.has_stoptime){ // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
       }
       else { // stop_time has not been filled. DAQ could be waiting in STARTED_S
         EBRunMode = kRecovery;
-        EBcomment = strtol(res[0][6].c_str(),NULL,10);
+        EBcomment = runinfo.ebcomment;
       }
     }
     else {
       EBRunMode = kRecovery;
-      EBcomment = strtol(res[0][6].c_str(),NULL,10);
+      EBcomment = runinfo.ebcomment;
     }
   }
   log_msg(LOG_INFO,"OV EBuilder Run Mode: %d\n",EBRunMode);
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  // Sanity check for each run mode
-  // Check if original run already used these parameters. No reprocess.
-  if(EBRunMode == kReprocess) {
-    if(atoi(res[0][2]) == Threshold && (TriggerMode)atoi(res[0][3]) == EBTrigMode)
-      die_with_log("MySQL running parameters match "
-        "reprocessing parameters. Threshold: %04d\tTrigger type: %01d\n",
-        Threshold, (int)EBTrigMode);
-  }
-  else if(EBRunMode == kRecovery) { // Check consistency of run parameters
-    if(res[0][1].c_str() != OVRunType ||
-       atoi(res[0][2]) != Threshold ||
-       atoi(res[0][3]) != (int)EBTrigMode)
-      die_with_log("MySQL parameters do not match recovery "
-        "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d\n",
-        OVRunType.c_str(),Threshold, (int)EBTrigMode);
-    if(!res[0][7].is_null()) SubRunCounter = timestampsperoutput*atoi(res[0][7]);
-  }
-
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  // Get EBuilder parameters from MySQL database
-  if(EBRunMode != kReprocess) {
-    if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) // Sanity check
-      die_with_log("Invalid EBTrigMode: %01d\n",EBTrigMode);
-
-    if(EBTrigMode != (TriggerMode)atoi(res[0][3]))
-      log_msg(LOG_WARNING, "Trigger Mode requested (%d) will "
-        "override MySQL setting (%d)\n",(int)EBTrigMode,atoi(res[0][3]));
-
-    if(Threshold != atoi(res[0][2]))
-      log_msg(LOG_WARNING, "Threshold requested (%d) will override "
-        "MySQL setting (%d)\n",Threshold,atoi(res[0][2]));
-
-    printf("Threshold: %d \t EBTrigMode: %d\n",Threshold,EBTrigMode);
-  }
+  if(EBRunMode == kRecovery && runinfo.has_ebsubrun)
+    SubRunCounter = timestampsperoutput*runinfo.ebsubrun;
 
   bool Repeat = false;
 
@@ -1152,6 +1164,7 @@ static void read_summary_table()
   if(EBRunMode == kReprocess) {
     umask(0);
 
+    char query_string[BUFSIZE];
     sprintf(query_string,"SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
             RunNumber.c_str());
     mysqlpp::Query query2 = myconn.query(query_string);
