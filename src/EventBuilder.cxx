@@ -56,18 +56,16 @@ static char username[BUFSIZE] = {0};
 static char password[BUFSIZE] = {0};
 static char database[BUFSIZE] = {0};
 
-// Set in read_summary_table() and used throughout
-// Set directly
+// Set in read_summary_table() from database information and used throughout
 static int numUSB = 0;
 static int numFanUSB = 0;
-
 static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
                              // USBs to all numerical ordering of all USBs
-static map<int,int*> pmtoffsets; // Map to hold offsets for each PMT board
+static map<int,int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                   // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
-static string DataFolder; // Path to data hard-coded
+static string BinaryDir; // Path to data
 static string OutputFolder; // Default output data path hard-coded
 static long int EBcomment = 0;
 static int SubRunCounter = 0;
@@ -220,14 +218,12 @@ static void check_status()
 // Loads files
 // Just check that it exists
 // (XXX which is it?)
-static bool LoadRun(string &binary_dir)
+static bool LoadRun()
 {
-  binary_dir = DataFolder + "/Run_" + RunNumber + "/binary";
-
   files.clear();
-  if(GetDir(binary_dir, files)) {
+  if(GetDir(BinaryDir, files)) {
     if(errno) {
-      log_msg(LOG_CRIT, "Error(%d) opening dir %s\n",errno,binary_dir.c_str());
+      log_msg(LOG_CRIT, "Error(%d) opening dir %s\n",errno,BinaryDir.c_str());
       write_ebretval(-1);
       exit(1);
     }
@@ -271,11 +267,11 @@ static bool LoadRun(string &binary_dir)
 // Loads files
 // Checks to see if files are ready to be processed
 // (XXX Which is it?)
-static int LoadAll(string dir)
+static int LoadAll()
 {
-  int r = check_disk_space(dir);
+  const int r = check_disk_space(BinaryDir);
   if(r < 0) {
-    log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n",dir.c_str());
+    log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n",BinaryDir.c_str());
     return r;
   }
 
@@ -283,7 +279,7 @@ static int LoadAll(string dir)
     // FixME: Is 2*numUSB sufficient to guarantee a match?
     if((int)files.size() <= 3*numUSB) {
       files.clear();
-      if(GetDir(dir,files))
+      if(GetDir(BinaryDir,files))
         return 0;
     }
   }
@@ -345,7 +341,7 @@ static int LoadAll(string dir)
       }
     }
     // Build input filename ( _$usb will be added by LoadFile function )
-    base_filename=dir;
+    base_filename=BinaryDir;
     base_filename.append("/");
     base_filename.append(ftime_min);
     if( (status = OVUSBStream[k].LoadFile(base_filename)) < 1 ) // Can't load file
@@ -466,7 +462,7 @@ static void BuildEvent(DataVector *OutDataVector,
           const long int expected_time_16ns_sync =
             (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
           const long int expected_time_16ns_sync_offset =
-            *(pmtoffsets[usb]+module_local);
+            *(PMTOffsets[usb]+module_local);
 
           if(expected_time_16ns_sync - expected_time_16ns_sync_offset
              != time_16ns_sync)
@@ -711,13 +707,12 @@ static bool GetBaselines()
 {
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search baseline directory for files and sort them lexigraphically
-  string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary";
   vector<string> in_files_tmp;
   vector<string>::iterator in_files_tmp_it;
-  if(GetDir(binary_dir, in_files_tmp, 0, 1)) { // Get baselines too
+  if(GetDir(BinaryDir, in_files_tmp, 0, 1)) { // Get baselines too
     if(errno)
       log_msg(LOG_ERR, "Fatal Error(%d) opening binary "
-        "directory %s for baselines\n",errno,binary_dir.c_str());
+        "directory %s for baselines\n",errno,BinaryDir.c_str());
     return false;
   }
   else {
@@ -741,7 +736,7 @@ static bool GetBaselines()
   if((int)in_files.size() != numUSB-numFanUSB) {
     log_msg(LOG_ERR, "Fatal Error: Baseline file count (%lu) != "
       "numUSB (%d) in directory %s\n", (long int)in_files.size(), numUSB,
-       binary_dir.c_str());
+       BinaryDir.c_str());
     return false;
   }
 
@@ -754,7 +749,7 @@ static bool GetBaselines()
         "unassigned while getting baselines\n");
       return false;
     }
-    if(OVUSBStream[Datamap[i]].LoadFile(binary_dir+ "/baseline") < 1)
+    if(OVUSBStream[Datamap[i]].LoadFile(BinaryDir+ "/baseline") < 1)
       return false; // Load baseline file for data streams
   }
 
@@ -974,15 +969,15 @@ static void read_summary_table()
 
   // Create map of UBS_serial to array of pmt board offsets
   for(int i = 0; i<(int)res.num_rows(); i++) {
-    if(!pmtoffsets.count(atoi(res[i][0])))
-      pmtoffsets[atoi(res[i][0])] = new int[maxModules];
+    if(!PMTOffsets.count(atoi(res[i][0])))
+      PMTOffsets[atoi(res[i][0])] = new int[maxModules];
     if(atoi(res[i][1]) < maxModules)
-      *(pmtoffsets[atoi(res[i][0])]+atoi(res[i][1])) = atoi(res[i][2]);
+      *(PMTOffsets[atoi(res[i][0])] + atoi(res[i][1])) = atoi(res[i][2]);
   }
 
   // USB to array of PMT offsets
-  for(map<int,int*>::iterator pmtoffsetsIt = pmtoffsets.begin();
-      pmtoffsetsIt != pmtoffsets.end();
+  for(map<int,int*>::iterator pmtoffsetsIt = PMTOffsets.begin();
+      pmtoffsetsIt != PMTOffsets.end();
       pmtoffsetsIt++)
     OVUSBStream[USBmap[pmtoffsetsIt->first]].SetOffset(pmtoffsetsIt->second);
 
@@ -1070,19 +1065,20 @@ static void read_summary_table()
   const int disk = atoi(res[0][5]);
 
   // Assign output folder based on disk number
-  DataFolder = cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), disk, "OVDAQ/DATA");
+  const string datadir =
+    cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), disk, "OVDAQ/DATA");
+  BinaryDir = datadir + "/Run_" + RunNumber + "/binary/";
+  const string decoded_dir = datadir + "/Run_" + RunNumber + "/decoded/";
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
   vector<string> initial_files;
-  const string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary/";
-  const string decoded_dir = DataFolder + "/Run_" + RunNumber + "/decoded/";
   if(!res[0][6].is_null()) { // EBcomment filled each successful write attempt
     // False if non-baseline files are found
-    if(GetDir(binary_dir, initial_files, 0, 0)) {
+    if(GetDir(BinaryDir, initial_files, 0, 0)) {
       if(errno)
         die_in_read_summary_table("Error(%d) opening directory %s\n",
-          errno,binary_dir.c_str());
+          errno,BinaryDir.c_str());
       if(!res[0][8].is_null()){ // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
       }
@@ -1411,7 +1407,6 @@ int main(int argc, char **argv)
   vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int dataFile = 0; // output file descriptor
   string fname; // output file name
-  string binary_dir; // input file name
   int EventCounter = 0;
 
   start_log(); // establish syslog connection
@@ -1446,7 +1441,7 @@ int main(int argc, char **argv)
   OutputFolder = OutputFolder + "Run_" + RunNumber;
   timeout = time(0);
 
-  while(!LoadRun(binary_dir)) {
+  while(!LoadRun()) {
     if((int)difftime(time(0),timeout) > MAXTIME) {
       log_msg(LOG_CRIT,"Error: Binary data not found in the last %d seconds.\n",
         MAXTIME);
@@ -1468,7 +1463,7 @@ int main(int argc, char **argv)
         timeout = time(0);
 
         int status = 0;
-        while((status = LoadAll(binary_dir)) < 1){ // Try to find new files for each USB
+        while((status = LoadAll()) < 1){ // Try to find new files for each USB
           if(status == -1) {
             write_ebretval(-1);
             return 127;
