@@ -87,12 +87,12 @@ static bool write_ebretval(const int val)
 
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"SELECT Run_number FROM OV_runsummary WHERE Run_number = '%s';",
-    RunNumber.c_str());
+  sprintf(query_string,"SELECT Run_number FROM OV_runsummary "
+    "WHERE Run_number = '%s';", RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
 
-  if(res.num_rows() == 1) {  // Run has never been reprocessed with this configuration
+  if(res.num_rows() == 1){ // Run has never been reprocessed with this configuration
 
     sprintf(query_string,"Update OV_runsummary set EBretval = '%d' "
       "where Run_number = '%s';", val,RunNumber.c_str());
@@ -106,8 +106,8 @@ static bool write_ebretval(const int val)
   }
   else {
     log_msg(LOG_WARNING,
-            "Did not find unique OV_runsummary entry for run %s in eb_writeretval\n",
-            RunNumber.c_str());
+      "Did not find unique OV_runsummary entry for run %s in eb_writeretval\n",
+      RunNumber.c_str());
     myconn.disconnect();
     return false;
   }
@@ -191,7 +191,7 @@ static void check_status()
         if(Ddelay % 3 == 0) { // Every minute of delay
           Ddelay /= 3;
           log_msg(LOG_NOTICE,
-                  "Process has accumulated %d min of delay since starting\n",Ddelay);
+            "Process has accumulated %d min of delay since starting\n", Ddelay);
         }
       }
     }
@@ -222,7 +222,7 @@ static bool LoadRun(string &binary_dir)
   files.clear();
   if(GetDir(binary_dir, files)) {
     if(errno) {
-      log_msg(LOG_CRIT, "Error(%d) opening directory %s\n",errno,binary_dir.c_str());
+      log_msg(LOG_CRIT, "Error(%d) opening dir %s\n",errno,binary_dir.c_str());
       write_ebretval(-1);
       exit(1);
     }
@@ -254,7 +254,7 @@ static bool LoadRun(string &binary_dir)
   }
   else { // FixMe: To optimize (logic) (Was never done for Double Chooz - needed?)
     if(EBRunMode == kRecovery) {
-      log_msg(LOG_CRIT,"Output directories did not already exist in recovery mode.\n");
+      log_msg(LOG_CRIT,"Output dirs did not already exist in recovery mode.\n");
       write_ebretval(-1);
       exit(1);
     }
@@ -312,7 +312,8 @@ static int LoadAll(string dir)
         break;
       }
       if(j==(int)(files.size()-1)) { // Failed to find a file for USB k
-        log_msg(LOG_WARNING, "USB %d data file not found\n",OVUSBStream[k].GetUSB());
+        log_msg(LOG_WARNING, "USB %d data file not found\n",
+          OVUSBStream[k].GetUSB());
         files.clear();
         return 0;
       }
@@ -386,7 +387,8 @@ static void BuildEvent(DataVector *OutDataVector,
       exit(1);
     }
 
-    if(CurrentOutDataVectorIt == OutDataVector->begin()) { // First packet in built event
+    // First packet in built event
+    if(CurrentOutDataVectorIt == OutDataVector->begin()) {
       time_s_hi = (CurrentOutDataVectorIt->at(1) << 8) + CurrentOutDataVectorIt->at(2);
       time_s_lo = (CurrentOutDataVectorIt->at(3) << 8) + CurrentOutDataVectorIt->at(4);
       CurrEventHeader->SetTimeSec(time_s_hi*0x10000 + time_s_lo);
@@ -399,12 +401,12 @@ static void BuildEvent(DataVector *OutDataVector,
         write_ebretval(-1);
         exit(1);
       } // To be optimized
-
     }
 
     nwords = (CurrentOutDataVectorIt->at(0) & 0xff) - 1;
     module_local = (CurrentOutDataVectorIt->at(0) >> 8) & 0x7f;
-    // EBuilder temporary internal mapping is decoded back to pmtbaord_u from MySQL table
+    // EBuilder temporary internal mapping is decoded back to pmtbaord_u from
+    // MySQL table
     usb = OVUSBStream[*CurrentOutIndexVectorIt].GetUSB();
     module = PMTUniqueMap[usb*1000+module_local];
     type = CurrentOutDataVectorIt->at(0) >> 15;
@@ -446,7 +448,7 @@ static void BuildEvent(DataVector *OutDataVector,
           if(temp & 1) {
             k++;
           }
-          temp >>=1;
+          temp >>= 1;
         }
       }
       length = k;
@@ -457,16 +459,17 @@ static void BuildEvent(DataVector *OutDataVector,
          * at expected clock count */
         // Firmware only allows this for special sync pulse packets in trigger box
         if(length == 32) {
-          long int time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
-          long int expected_time_16ns_sync = (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
-          long int expected_time_16ns_sync_offset = *(pmtoffsets[usb]+module_local);
-          //Camillo modification
+          const long int time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
+          const long int expected_time_16ns_sync =
+            (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
+          const long int expected_time_16ns_sync_offset =
+            *(pmtoffsets[usb]+module_local);
+
           if(expected_time_16ns_sync - expected_time_16ns_sync_offset
-             != time_16ns_sync) {
+             != time_16ns_sync)
             log_msg(LOG_ERR, "Trigger box module %d received sync pulse at "
               "clock count %ld instead of expected clock count (%ld).\n",
               module,time_16ns_sync,expected_time_16ns_sync);
-          }
         }
       }
     }
@@ -627,7 +630,8 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
         if(channel >= numChannels)
           log_msg(LOG_ERR, "Fatal Error: Channel number requested "
             "(%d) out of range in calculate pedestal\n",channel);
-        // Should these be modified to better handle large numbers of baseline triggers?
+        // Should these be modified to better handle large numbers of baseline
+        // triggers?
         baseline[module][channel] = (baseline[module][channel]*
           counter[module][channel] + charge)/(counter[module][channel]+1);
         counter[module][channel] = counter[module][channel] + 1;
@@ -666,7 +670,8 @@ static bool WriteBaselineTable(int **baseptr, int usb)
   char mybuff[BUFSIZE];
   sprintf(mydate, "%.4d-%.2d-%.2d", 1900+timeinfo->tm_year,
           1+timeinfo->tm_mon, timeinfo->tm_mday);
-  sprintf(mytime,"%.2d:%.2d:%.2d",timeinfo->tm_hour,timeinfo->tm_min,timeinfo->tm_sec);
+  sprintf(mytime, "%.2d:%.2d:%.2d", timeinfo->tm_hour, timeinfo->tm_min,
+    timeinfo->tm_sec);
   string baseline_values = "";
 
   for(int i = 0; i < maxModules; i++) {
@@ -684,8 +689,9 @@ static bool WriteBaselineTable(int **baseptr, int usb)
 
         if(j==numChannels-1) { // last baseline value has been inserted
 
-          sprintf(query_string,"INSERT INTO OV_pedestal VALUES ('%s','%s','%s',''%s);",
-                  RunNumber.c_str(),mydate,mytime,baseline_values.c_str());
+          sprintf(query_string, "INSERT INTO OV_pedestal "
+            "VALUES ('%s','%s','%s',''%s);",
+            RunNumber.c_str(),mydate,mytime,baseline_values.c_str());
 
           mysqlpp::Query query = myconn.query(query_string);
           if(!query.execute()) {
@@ -744,28 +750,23 @@ static bool GetBaselines()
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set USB numbers for each OVUSBStream and load baseline files
-  vector<string>::iterator in_files_it=in_files.begin();
-  string fusb;
-  long int iusb;
-  for(int i = 0; i<numUSB-numFanUSB; i++) {
-    fusb = in_files_it->substr(in_files_it->find("_")+1,in_files_it->npos);
-    iusb = strtol(fusb.c_str(),NULL,10); // if the usb is in the list of non-fan-in usbs
+  for(int i = 0; i < numUSB - numFanUSB; i++) {
     // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
-        log_msg(LOG_ERR, "Fatal Error: Found USB number "
-          "unassigned while getting baselines\n");
-        return false;
+      log_msg(LOG_ERR, "Fatal Error: Found USB number "
+        "unassigned while getting baselines\n");
+      return false;
     }
     if(OVUSBStream[Datamap[i]].LoadFile(binary_dir+ "/baseline") < 1)
       return false; // Load baseline file for data streams
-    in_files_it++;
   }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Decode all files at once and load into memory
   for(int j=0; j<numUSB-numFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n",Datamap[j]);
-    gThreads[Datamap[j]] = new TThread(Form("gThreads%d",Datamap[j]), handle, (void*) Datamap[j]);
+    gThreads[Datamap[j]] =
+      new TThread(Form("gThreads%d",Datamap[j]), handle, (void*) Datamap[j]);
     gThreads[Datamap[j]]->Run();
   }
 
@@ -797,7 +798,7 @@ static bool GetBaselines()
   for(int i = 0; i<numUSB-numFanUSB; i++) {
     OVUSBStream[Datamap[i]].GetBaselineData(BaselineData);
     CalculatePedestal(BaselineData,baselines);
-    OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should I check for success here?
+    OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
     usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
     if(!WriteBaselineTable(baselines,usb)) {
       log_msg(LOG_ERR, "Fatal Error writing baseline table to MySQL database\n");
@@ -835,7 +836,7 @@ static bool write_ebsummary()
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
 
-  if(res.num_rows() == 0) {  // Run has never been reprocessed with this configuration
+  if(res.num_rows() == 0){ // Run has never been reprocessed with this configuration
     sprintf(query_string,"INSERT INTO OV_ebuilder "
       "(Run_number,Path,SW_Threshold,SW_TriggerMode,Res1,Res2) "
       "VALUES ('%s','%s','%04d','%01d','00','00');",
@@ -1037,8 +1038,8 @@ static void read_summary_table()
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
   sprintf(query_string, "SELECT Run_number,Run_Type,SW_Threshold,"
-    "SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,"
-    "stop_time FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
+    "SW_TriggerMode,use_DOGSifier,daq_disk,EBcomment,EBsubrunnumber,stop_time"
+    "FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
     RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
@@ -1082,7 +1083,7 @@ static void read_summary_table()
       if(errno)
         die_in_read_summary_table("Error(%d) opening directory %s\n",
           errno,binary_dir.c_str());
-      if(!res[0][8].is_null()) { // stop_time has been filled and so was a successful run
+      if(!res[0][8].is_null()){ // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
       }
       else { // stop_time has not been filled. DAQ could be waiting in STARTED_S
@@ -1269,9 +1270,8 @@ static void read_summary_table()
           files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 1));
         if(mysize > 1)
           files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 2));
-        if(mysize > 2 && mysize > avgsize) {
+        if(mysize > 2 && mysize > avgsize)
           files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 3));
-        }
       }
     }
     else { // Rename all files if EBRunMode == kReprocess
@@ -1346,8 +1346,8 @@ static bool read_stop_time()
 
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"SELECT stop_time FROM OV_runsummary WHERE Run_number = '%s' "
-    "ORDER BY start_time DESC;",RunNumber.c_str());
+  sprintf(query_string,"SELECT stop_time FROM OV_runsummary "
+    "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
   if(res.num_rows() < 1) {
@@ -1426,7 +1426,8 @@ int main(int argc, char **argv)
   time_t timeout = time(0);
   while(!GetBaselines()) { // Get baselines
     if((int)difftime(time(0),timeout) > MAXTIME) {
-      log_msg(LOG_CRIT,"Error: Baseline data not found in the last %d seconds.\n",MAXTIME);
+      log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
+        MAXTIME);
       write_ebretval(-1);
       return 127;
     }
@@ -1467,7 +1468,7 @@ int main(int argc, char **argv)
         timeout = time(0);
 
         int status = 0;
-        while( (status = LoadAll(binary_dir)) < 1 ) { // Try to find new files for each USB
+        while((status = LoadAll(binary_dir)) < 1){ // Try to find new files for each USB
           if(status == -1) {
             write_ebretval(-1);
             return 127;
@@ -1600,9 +1601,8 @@ int main(int argc, char **argv)
     } // End of while loop: Events have been built for this time stamp
 
     // Clean up operations and store data for later
-    for(int k=0; k<numUSB; k++) {
+    for(int k=0; k<numUSB; k++)
       CurrentDataVector[k].assign(CurrentDataVectorIt[k],CurrentDataVector[k].end());
-    }
     ExtraDataVector.assign(MinDataVector.begin(),MinDataVector.end());
     ExtraIndexVector.assign(MinIndexVector.begin(),MinIndexVector.end());
 
@@ -1637,7 +1637,7 @@ int main(int argc, char **argv)
     EventCounter = 0;
   }
 
-  cout << "In normal operation this program should not terminate like it is now...\n";
+  cout << "Normally this program should not terminate like it is now...\n";
 
   write_ebretval(1);
   return 0;
