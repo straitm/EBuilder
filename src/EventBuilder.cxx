@@ -535,11 +535,9 @@ static void BuildEvent(DataVector *OutDataVector,
   delete CurrDataPacketHeader;
 }
 
-static int parse_options(int argc, char **argv)
+static bool parse_options(int argc, char **argv)
 {
-  bool show_help = false;
-
-  if(argc <= 1) show_help = true;
+  if(argc <= 1) goto fail;
 
   char c;
   while ((c = getopt (argc, argv, "d:r:t:T:R:H:e:h:")) != -1) {
@@ -556,40 +554,46 @@ static int parse_options(int argc, char **argv)
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
     case 'e': OutDisk = atoi(optarg); break;
     case 'h':
-    default:  show_help = true; break;
+    default:  goto fail;
     }
   }
-  if(optind < argc) show_help = true;
-  if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer) show_help = true;
+  if(optind < argc){
+    printf("Unknown options given\n");
+    goto fail;
+  }
+  if(EBTrigMode < kNone || EBTrigMode > kDoubleLayer){
+    printf("Invalid trigger mode %d\n", EBTrigMode);
+    goto fail;
+  }
   if(Threshold < 0) {
     printf("Negative thresholds not allowed.\n");
-    show_help = true;
+    goto fail;
   }
 
   for(int index = optind; index < argc; index++){
     printf("Non-option argument %s\n", argv[index]);
-    show_help = true;
+    goto fail;
   }
 
-  if(show_help) {
-    printf("Usage: %s -r <run_number> [-d <data_disk>]\n",argv[0]);
-    printf("      [-t <offline_threshold>] [-T <offline_trigger_mode>] [-R <run_type>]\n"
-           "      [-H <OV_DAQ_data_mount_point>] [-e <EBuilder_output_disk>]\n"
-           "-d : disk number of OV DAQ data to be processed [default: 2]\n"
-           "-r : expected run # for incoming data\n"
-           "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
-           "-t : offline threshold (ADC counts) to apply\n"
-           "     [default: 0 (no software threshold)]\n"
-           "-T : offline trigger mode (0: NONE, 1: OR, 2: AND)\n"
-           "     [default: 0 (No trigger pattern between layers)]\n"
-           "-R : OV run type (P: physics, C: calib, D: debug)\n"
-           "     [default: P (physics run)]\n"
-           "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
-           "-e : disk number of OV EBuilder output binary [default: 1]\n");
-    return -1;
-  }
+  return true;
 
-  return 1;
+  fail:
+  printf("Usage: %s -r <run_number> [-d <data_disk>]\n"
+         "      [-t <offline_threshold>] [-T <offline_trigger_mode>] [-R <run_type>]\n"
+         "      [-H <OV_DAQ_data_mount_point>] [-e <EBuilder_output_disk>]\n"
+         "-d : disk number of OV DAQ data to be processed [default: 2]\n"
+         "-r : expected run # for incoming data\n"
+         "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
+         "-t : offline threshold (ADC counts) to apply\n"
+         "     [default: 0 (no software threshold)]\n"
+         "-T : offline trigger mode (0: NONE, 1: OR, 2: AND)\n"
+         "     [default: 0 (No trigger pattern between layers)]\n"
+         "-R : OV run type (P: physics, C: calib, D: debug)\n"
+         "     [default: P]\n"
+         "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
+         "-e : disk number of OV EBuilder output binary [default: 1]\n",
+         argv[0]);
+  return false;
 }
 
 static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
@@ -1400,7 +1404,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
 
 int main(int argc, char **argv)
 {
-  if(parse_options(argc, argv) < 0) {
+  if(!parse_options(argc, argv)) {
     write_ebretval(-1);
     return 127;
   }
