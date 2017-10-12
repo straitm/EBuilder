@@ -1224,6 +1224,8 @@ static void read_summary_table()
     }
   }
 
+  myconn.disconnect();
+
   if(!Repeat && !write_ebsummary())
     die_in_read_summary_table("!Repeat && !write_ebsummary\n");
 
@@ -1302,7 +1304,6 @@ static void read_summary_table()
       }
     }
   }
-  myconn.disconnect();
 }
 
 static bool write_summary_table(long int lasttime, int subrun)
