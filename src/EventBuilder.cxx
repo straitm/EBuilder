@@ -215,14 +215,14 @@ static void check_status()
 // Loads files
 // Just check that it exists
 // (XXX which is it?)
-static bool LoadRun(string &datadir)
+static bool LoadRun(string &binary_dir)
 {
-  datadir = DataFolder + "/Run_" + RunNumber + "/binary";
+  binary_dir = DataFolder + "/Run_" + RunNumber + "/binary";
 
   files.clear();
-  if(GetDir(datadir, files)) {
+  if(GetDir(binary_dir, files)) {
     if(errno) {
-      log_msg(LOG_CRIT, "Error(%d) opening directory %s\n",errno,datadir.c_str());
+      log_msg(LOG_CRIT, "Error(%d) opening directory %s\n",errno,binary_dir.c_str());
       write_ebretval(-1);
       exit(1);
     }
@@ -708,13 +708,13 @@ static bool GetBaselines()
 {
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search baseline directory for files and sort them lexigraphically
-  string in_dir = DataFolder + "/Run_" + RunNumber + "/binary";
+  string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary";
   vector<string> in_files_tmp;
   vector<string>::iterator in_files_tmp_it;
-  if(GetDir(in_dir, in_files_tmp, 0, 1)) { // Get baselines too
+  if(GetDir(binary_dir, in_files_tmp, 0, 1)) { // Get baselines too
     if(errno)
       log_msg(LOG_ERR, "Fatal Error(%d) opening binary "
-        "directory %s for baselines\n",errno,in_dir.c_str());
+        "directory %s for baselines\n",errno,binary_dir.c_str());
     return false;
   }
   else {
@@ -738,7 +738,7 @@ static bool GetBaselines()
   if((int)in_files.size() != numUSB-numFanUSB) {
     log_msg(LOG_ERR, "Fatal Error: Baseline file count (%lu) != "
       "numUSB (%d) in directory %s\n", (long int)in_files.size(), numUSB,
-       in_dir.c_str());
+       binary_dir.c_str());
     return false;
   }
 
@@ -756,7 +756,7 @@ static bool GetBaselines()
           "unassigned while getting baselines\n");
         return false;
     }
-    if(OVUSBStream[Datamap[i]].LoadFile(in_dir+ "/baseline") < 1)
+    if(OVUSBStream[Datamap[i]].LoadFile(binary_dir+ "/baseline") < 1)
       return false; // Load baseline file for data streams
     in_files_it++;
   }
@@ -1058,15 +1058,18 @@ static void read_summary_table()
     die_in_read_summary_table("MySQL query error: could not retrieve "
       "data disk for Run: %s\n",RunNumber.c_str());
   Disk = atoi(res[0][5]);
-  char inpath[BUFSIZE]; // Assign output folder based on disk number
-  sprintf(inpath,"/%s/data%d/%s",OVDAQHost.c_str(),Disk,"OVDAQ/DATA");
-  DataFolder = inpath;
+
+  {
+    char buf[BUFSIZE]; // Assign output folder based on disk number
+    sprintf(buf, "/%s/data%d/%s", OVDAQHost.c_str(), Disk, "OVDAQ/DATA");
+    DataFolder = buf;
+  }
 
   //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
   vector<string> initial_files;
-  string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary/";
-  string decoded_dir = DataFolder + "/Run_" + RunNumber + "/decoded/";
+  const string binary_dir = DataFolder + "/Run_" + RunNumber + "/binary/";
+  const string decoded_dir = DataFolder + "/Run_" + RunNumber + "/decoded/";
   if(!res[0][6].is_null()) { // EBcomment filled each successful write attempt
     // False if non-baseline files are found
     if(GetDir(binary_dir, initial_files, 0, 0)) {
@@ -1249,16 +1252,16 @@ static void read_summary_table()
     int mapindex = 0;
     for(int k = 0; k<(int)initial_files.size(); k++) {
       string fusb = (initial_files[k]).substr(fname_it_delim+1,2);
-      int iusb = (int)strtol(fusb.c_str(),NULL,10);
+      const int iusb = (int)strtol(fusb.c_str(),NULL,10);
       if(!mymap.count(iusb)) mymap[iusb] = mapindex++;
       myfiles[mymap[iusb]].push_back(initial_files[k]);
     }
 
     vector<string> files_to_rename;
-    int avgsize = initial_files.size()/numUSB;
     if(EBRunMode == kRecovery) {
-      for(int j = 0; j<numUSB; j++) {
-        int mysize = myfiles[j].size();
+      for(int j = 0; j < numUSB; j++) {
+        const int mysize = myfiles[j].size();
+        const int avgsize = initial_files.size()/numUSB;
         if(mysize > 0)
           files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 1));
         if(mysize > 1)
@@ -1269,34 +1272,32 @@ static void read_summary_table()
       }
     }
     else { // Rename all files if EBRunMode == kReprocess
-      for(int j = 0; j<(int)initial_files.size(); j++)
+      for(unsigned int j = 0; j < initial_files.size(); j++)
         files_to_rename.push_back(decoded_dir + initial_files[j]);
     }
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Rename files
     for(int i = 0; i<(int)files_to_rename.size(); i++) {
-      bool rn_error = false;
-      string tempfname = files_to_rename[i];
-      size_t temppos = tempfname.find("decoded");
-      if(temppos != tempfname.npos)
-        tempfname.replace(temppos,7,"binary");
-      else
-        rn_error = true;
-      temppos = tempfname.find(".done");
-      if(temppos != tempfname.npos)
-        tempfname.replace(temppos,5,"");
-      else
-        rn_error = true;
-      if(!rn_error) {
-        while(rename(files_to_rename[i].c_str(),tempfname.c_str())) {
-          log_msg(LOG_ERR,"Could not rename decoded data file.\n");
-          sleep(1);
-        }
+      string fname = files_to_rename[i];
+      {
+        const size_t pos = fname.find("decoded");
+        if(pos == string::npos)
+          die_in_read_summary_table("Unexpected decoded-data file name: %s\n",
+            fname.c_str());
+        fname.replace(pos,sizeof("decoded")-1,"binary");
       }
-      else {
-        die_in_read_summary_table("Unexpected decoded data file name: %s\n",
-          tempfname.c_str());
+      {
+        const size_t pos = fname.find(".done");
+        if(pos == string::npos)
+          die_in_read_summary_table("Unexpected decoded-data file name: %s\n",
+            fname.c_str());
+        fname.replace(pos,sizeof(".done")-1,"");
+      }
+
+      while(rename(files_to_rename[i].c_str(), fname.c_str())) {
+        log_msg(LOG_ERR,"Could not rename decoded data file.\n");
+        sleep(1);
       }
     }
   }
@@ -1408,7 +1409,7 @@ int main(int argc, char **argv)
   vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int dataFile = 0; // output file descriptor
   string fname; // output file name
-  string iname; // input file name
+  string binary_dir; // input file name
   int EventCounter = 0;
 
   start_log(); // establish syslog connection
@@ -1442,7 +1443,7 @@ int main(int argc, char **argv)
   OutputFolder = OutputFolder + "Run_" + RunNumber;
   timeout = time(0);
 
-  while(!LoadRun(iname)) {
+  while(!LoadRun(binary_dir)) {
     if((int)difftime(time(0),timeout) > MAXTIME) {
       log_msg(LOG_CRIT,"Error: Binary data not found in the last %d seconds.\n",
         MAXTIME);
@@ -1464,7 +1465,7 @@ int main(int argc, char **argv)
         timeout = time(0);
 
         int status = 0;
-        while( (status = LoadAll(iname)) < 1 ) { // Try to find new files for each USB
+        while( (status = LoadAll(binary_dir)) < 1 ) { // Try to find new files for each USB
           if(status == -1) {
             write_ebretval(-1);
             return 127;
