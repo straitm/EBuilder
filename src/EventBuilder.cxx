@@ -1,3 +1,7 @@
+// TODO: Cut out everything about fan-in boards once we've tested with
+// some Double Chooz data. As per Camillo: "in protodune no fan in boxes
+// so just skip that."
+
 #include "USBstream-TypeDef.h"
 #include "USBstream.h"
 #include "USBstreamUtils.h"
@@ -654,6 +658,8 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
 
 static bool WriteBaselineTable(int **baseptr, int usb)
 {
+  return true; // XXX No database, so just pretend things are ok
+
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
@@ -817,6 +823,8 @@ static bool GetBaselines()
 
 static bool write_ebsummary()
 {
+  return true; // XXX no database, so just pretend this worked.
+
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
