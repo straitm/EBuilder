@@ -46,6 +46,7 @@ void log_msg(int priority, const char * const format, ...)
   va_start(ap, format);
   vprintf(format, ap);
 
+  va_start(ap, format);
   if(priority == LOG_NOTICE || priority == LOG_WARNING || priority == LOG_ERR ||
      priority == LOG_CRIT   || priority == LOG_ALERT   || priority == LOG_EMERG)
     vsyslog(priority, format, ap);
