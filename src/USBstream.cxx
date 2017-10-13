@@ -194,10 +194,8 @@ bool USBstream::decode()
 
   unsigned int long word = 0; // holds 24-bit word being built, must be unsigned int
   char exp = 0; // expecting this type next
-  int counter=0;
 
   while(true){ //loop over buffer packets
-    counter++;
     if(bytesleft < 0xffff){
       fsize = bytesleft;
     }
@@ -209,8 +207,8 @@ bool USBstream::decode()
     myFile->read(filedata, fsize);//read data of appropriate size
 
     for(int bytedex = 0; bytedex < fsize; bytedex++){ //loop over members in buffer
-      char payload = filedata[bytedex] & 63;
-      char pretype = (filedata[bytedex] >> 6) & 3;
+      const char payload = filedata[bytedex] & 0x3f;
+      const char pretype = (filedata[bytedex] >> 6) & 3;
       if(pretype == 0){ //not handling type very well.
         exp = 1;
         word = payload;
@@ -243,10 +241,12 @@ bool USBstream::decode()
                    // writes complete packets to disk at start/end of files
   //flush_extra(); // For now this is not true
 
+  // What?  This looks bad.  Why would myFile be open after it is closed!?
   while(myFile->is_open()) {
     myFile->close();
     usleep(100);
   }
+
   delete myFile;
   IsOpen = false;
 

@@ -752,8 +752,7 @@ static bool GetBaselines()
   for(unsigned int i = 0; i < num_nonFanUSB; i++) {
     // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
-      log_msg(LOG_ERR, "Fatal Error: Found USB number "
-        "unassigned while getting baselines\n");
+      log_msg(LOG_ERR, "Error: USB number unassigned while getting baselines\n");
       return false;
     }
     if(OVUSBStream[Datamap[i]].LoadFile(BinaryDir+ "/baseline") < 1)
@@ -761,6 +760,10 @@ static bool GetBaselines()
   }
 
   // Decode all files at once and load into memory
+  // XXX Why does this use threads?  We can't go on until they're all done
+  // and threads does not speed it up.  Actually... since I don't know what
+  // a TThread is given its lack of docuementation, I don't know if that's
+  // true or not.
   for(unsigned int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n", Datamap[j]);
     gThreads[Datamap[j]] =
