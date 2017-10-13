@@ -1039,6 +1039,32 @@ static some_run_info get_some_run_info(mysqlpp::Connection & myconn)
   return info;
 }
 
+// Returns the number of times the run has been processed before
+static unsigned int get_ntimesprocessed(mysqlpp::Connection & myconn)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string,"SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
+          RunNumber.c_str());
+  mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
+  return res.num_rows();
+}
+
+// Returns the directory where this run was processed the first time in this
+// configuration, or the empty string if it never has been
+static string get_same_config_path(mysqlpp::Connection & myconn)
+{
+  char query_string[BUFSIZE];
+  sprintf(query_string, "SELECT Path FROM OV_ebuilder "
+    "WHERE Run_number = '%s' and SW_Threshold = '%04d' and "
+    "SW_TriggerMode = '%01d' and Res1 = '00' and Res2 = '00' "
+    "ORDER BY Entry;", RunNumber.c_str(), Threshold, (int)EBTrigMode);
+
+  mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
+
+  if(res.num_rows() == 0) return "";
+  else return (string)res[0][0];
+}
+
 // Database tables read from: OV_runsummary; whatever table OV_runsummary names
 // in config_table, such as online400; and OV_ebuilder.
 static void read_summary_table()
@@ -1117,10 +1143,8 @@ static void read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
-
   const some_run_info runinfo = get_some_run_info(myconn);
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set the Data Folder and Ouput Dir
   const string OutputDir = cpp_sprintf("/data%d/OVDAQ/",OutDisk);
   OutputFolder = OutputDir + "DATA/";
@@ -1131,7 +1155,6 @@ static void read_summary_table()
   BinaryDir = datadir + "/Run_" + RunNumber + "/binary/";
   const string decoded_dir = datadir + "/Run_" + RunNumber + "/decoded/";
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Determine run mode
   vector<string> initial_files;
   if(runinfo.has_ebcomment) { // EBcomment filled each successful write attempt
@@ -1159,54 +1182,41 @@ static void read_summary_table()
 
   bool Repeat = false;
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-  // Connect to EBuilder MySQL table
+  // Figure out run mode, do file handling appropriately
   if(EBRunMode == kReprocess) {
     umask(0);
 
-    char query_string[BUFSIZE];
-    sprintf(query_string,"SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
-            RunNumber.c_str());
-    mysqlpp::Query query2 = myconn.query(query_string);
-    mysqlpp::StoreQueryResult res2 = query2.store();
+    const unsigned int ntimesprocessed = get_ntimesprocessed(myconn);
 
-    if(res2.num_rows() == 0) // Can't find run in OV_ebuilder
-      die_with_log("MySQL query (%s) error: %s\n"
-        "EBuilder did not finish processing run %s. Run recovery mode first.\n",
-        query_string,query2.error(),RunNumber.c_str());
+    if(ntimesprocessed == 0) // Can't find run in OV_ebuilder
+      die_with_log("EBuilder did not finish processing run %s. "
+        "Run recovery mode first.\n", RunNumber.c_str());
 
-    if(res2.num_rows() == 1) { // Run has never been reprocessed
+    if(ntimesprocessed == 1) { // Run has never been reprocessed
       OutputFolder = cpp_sprintf("%sREP/Run_%s", OutputDir.c_str(), RunNumber.c_str());
       if(mkdir(OutputFolder.c_str(), 0777)) {
+        // XXX should use perror here and elsewhere to report all kinds of
+        // errors, not just the most common, automatically
         if(errno != EEXIST)
-          die_with_log("Error (%d) creating output folder %s\n",
-                  errno,OutputFolder.c_str());
-        log_msg(LOG_WARNING, "Output folder %s already exists.\n",
-                OutputFolder.c_str());
+          die_with_log("Error (%d) creating output dir %s\n",
+                  errno, OutputFolder.c_str());
+        log_msg(LOG_WARNING, "Output dir %s already exists.\n", OutputFolder.c_str());
       }
     }
 
-    sprintf(query_string,"SELECT Path, ENTRY FROM OV_ebuilder "
-      "WHERE Run_number = '%s' and SW_Threshold = "
-      "'%04d' and SW_TriggerMode = '%01d' and Res1 = '00' and "
-      "Res2 = '00' ORDER BY ENTRY;",
-      RunNumber.c_str(),Threshold,(int)EBTrigMode);
-    printf("query: %s\n",query_string);
-    mysqlpp::Query query3 = myconn.query(query_string);
-    mysqlpp::StoreQueryResult res3 = query3.store();
+    const string same_config_path = get_same_config_path(myconn);
+    myconn.disconnect();
 
     // Run has already been reprocessed with same configuration
-    if(res3.num_rows() > 0) {
+    if(same_config_path != "") {
       Repeat = true;
-      const string Path = res3[0][0].c_str();
-      log_msg(LOG_WARNING, "Same reprocessing configuration found "
-              "for run %s at %s. Deleting...\n", RunNumber.c_str(),Path.c_str());
+      log_msg(LOG_WARNING, "Same reprocessing configuration found for "
+        "run %s at %s. Deleting...\n", RunNumber.c_str(), same_config_path.c_str());
 
-      //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       // Clean up old directory
       vector<string> old_files;
       string tempfile;
-      string tempdir = Path + "Run_" + RunNumber + "/processed";
+      string tempdir = same_config_path + "Run_" + RunNumber + "/processed";
       if(GetDir(tempdir, old_files, 1))
         if(errno)
           die_with_log("Error(%d) opening directory %s\n",
@@ -1221,11 +1231,10 @@ static void read_summary_table()
         die_with_log("Error deleting folder %s\n",tempdir.c_str());
       old_files.clear();
 
-      tempdir = Path + "Run_" + RunNumber;
+      tempdir = same_config_path + "Run_" + RunNumber;
       if(GetDir(tempdir, old_files, 1))
         if(errno)
-          die_with_log("Error(%d) opening directory %s\n",
-                  errno,tempdir.c_str());
+          die_with_log("Error(%d) opening directory %s\n", errno, tempdir.c_str());
 
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
@@ -1236,7 +1245,6 @@ static void read_summary_table()
         die_with_log("Error deleting folder %s\n",tempdir.c_str());
     }
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Create folder based on parameters
     OutputFolder = cpp_sprintf("%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
       OutputDir.c_str(), RunNumber.c_str(), (int)EBTrigMode, Threshold, 0, 0);
@@ -1249,13 +1257,10 @@ static void read_summary_table()
     }
   }
 
-  myconn.disconnect();
-
   if(!Repeat && !write_ebsummary())
     die_with_log("!Repeat && !write_ebsummary\n");
 
   if(EBRunMode != kNormal) {
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Move some decoded OV binary files for processing
     initial_files.clear();
     if(GetDir(decoded_dir, initial_files, 1)) {
@@ -1267,7 +1272,6 @@ static void read_summary_table()
     }
     sort(initial_files.begin(),initial_files.end());
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Determine files to rename
     vector<string>::iterator fname_begin=initial_files.begin();
     const string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
@@ -1303,7 +1307,6 @@ static void read_summary_table()
         files_to_rename.push_back(decoded_dir + initial_files[j]);
     }
 
-    //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Rename files
     for(int i = 0; i<(int)files_to_rename.size(); i++) {
       string fname = files_to_rename[i];
