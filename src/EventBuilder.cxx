@@ -720,8 +720,7 @@ static bool GetBaselines()
 {
   // Search baseline directory for files and sort them lexigraphically
   vector<string> in_files_tmp;
-  vector<string>::iterator in_files_tmp_it;
-  if(GetDir(BinaryDir, in_files_tmp, 0, 1)) { // Get baselines too
+  if(GetDir(BinaryDir, in_files_tmp, false, true)) { // Get baselines too
     if(errno)
       log_msg(LOG_ERR, "Fatal Error(%d) opening binary "
         "directory %s for baselines\n", errno, BinaryDir.c_str());
@@ -1255,7 +1254,7 @@ static void read_summary_table()
   vector<string> initial_files;
   if(runinfo.has_ebcomment) { // EBcomment filled each successful write attempt
     // False if non-baseline files are found
-    if(GetDir(BinaryDir, initial_files, 0, 0)) {
+    if(GetDir(BinaryDir, initial_files)) {
       if(errno)
         die_with_log("Error(%d) opening directory %s\n", errno, BinaryDir.c_str());
       if(runinfo.has_stoptime){ // stop_time has been filled and so was a successful run
@@ -1313,7 +1312,7 @@ static void read_summary_table()
       vector<string> old_files;
       string tempfile;
       string tempdir = same_config_path + "Run_" + RunNumber + "/processed";
-      if(GetDir(tempdir, old_files, 1))
+      if(GetDir(tempdir, old_files, true))
         if(errno)
           die_with_log("Error(%d) opening directory %s\n",
                   errno, tempdir.c_str());
@@ -1328,7 +1327,7 @@ static void read_summary_table()
       old_files.clear();
 
       tempdir = same_config_path + "Run_" + RunNumber;
-      if(GetDir(tempdir, old_files, 1))
+      if(GetDir(tempdir, old_files, true))
         if(errno)
           die_with_log("Error(%d) opening directory %s\n", errno, tempdir.c_str());
 
@@ -1359,7 +1358,7 @@ static void read_summary_table()
   if(EBRunMode != kNormal) {
     // Move some decoded OV binary files for processing
     initial_files.clear();
-    if(GetDir(decoded_dir, initial_files, 1)) {
+    if(GetDir(decoded_dir, initial_files, true)) {
       if(errno)
         die_with_log("Error (%d) opening directory %s\n",
                 errno, decoded_dir.c_str());

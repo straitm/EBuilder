@@ -16,7 +16,19 @@ bool LessThan(const std::vector<int> & lhs,
 
 void start_log();
 
-int GetDir(std::string dir, std::vector<std::string> &myfiles,
-           int opt = 0, int opt2 = 0);
+// Fills myfiles with a list of files in the given directory.
+//
+// These files are the set that does not have a dot in their name or, if 'allowdots',
+// are at least three characters long (I guess to exclude the . and ..
+// directories?).
+//
+// Also exclude files with names containing "baseline" or "processed" unless
+// 'allow_bl_and_pc' is true.
+//
+// Return true if no files are found that satisfy those rules.
+//
+// Returns false if it found files or if the directory couldn't be read.  [sic]
+bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
+            const bool allowdots = false, const bool allow_bl_and_pc = false);
 
 #endif

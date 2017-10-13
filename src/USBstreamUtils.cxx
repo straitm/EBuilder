@@ -83,40 +83,34 @@ void start_log()
   log_msg(LOG_NOTICE, "OV Event Builder Started\n");
 }
 
-int GetDir(std::string dir, std::vector<std::string> &myfiles,
-                  int opt, int opt2)
+bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
+            const bool allowdots, const bool allow_bl_and_pc)
 {
   DIR *dp;
   struct dirent *dirp;
-  std::string myfname;
 
-  errno = 0;
-  if((dp = opendir(dir.c_str())) == NULL) {
-    closedir(dp);
-    return errno;
+  if((dp = opendir(dir.c_str())) == NULL) return false; // really?
+
+  while((dirp = readdir(dp)) != NULL){
+    const std::string myfname = std::string(dirp->d_name);
+
+    if(allowdots){
+      if(myfname.find(".") != std::string::npos && myfname.size() <= 2)
+        continue;
+    }
+    else{
+      if(myfname.find(".") != std::string::npos)
+        continue;
+    }
+
+    if(!allow_bl_and_pc && (myfname.find("baseline")  != std::string::npos ||
+                            myfname.find("processed") != std::string::npos) )
+      continue;
+
+    myfiles.push_back(myfname);
   }
 
-  int counter = 0;
-  do{
-    if((dirp = readdir(dp)) != NULL) {
-      counter++;
-      myfname = std::string(dirp->d_name);
+  if(closedir(dp) < 0) return false;
 
-      // extensions reserved
-      if((myfname.find(".") == myfname.npos || (opt && myfname.size() > 2)) &&
-         (opt2 || (myfname.find("baseline") == myfname.npos &&
-         myfname.find("processed") == myfname.npos) ) )
-        myfiles.push_back(myfname);
-    }
-  } while(dirp!=NULL);
-
-  if(closedir(dp) < 0)
-    return errno;
-
-  dp=NULL;
-
-  if(myfiles.size()==0)
-    return -1;
-  else
-    return 0;
+  return myfiles.size()==0;
 }
