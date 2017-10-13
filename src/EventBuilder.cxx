@@ -785,32 +785,29 @@ static bool GetBaselines()
   cout << "Joined all threads!\n";
 
   // Build baseline tables
+  // XXX I think this can be replaced with a zeroed 2D array in one line
   int **baselines = new int*[maxModules];
   for(int i = 0; i<maxModules; i++) {
     baselines[i] = new int[numChannels];
-    for(int j = 0; j<numChannels; j++) {
+    for(int j = 0; j<numChannels; j++)
       *(*(baselines+i)+j) = 0;
-    }
   }
 
-  DataVector *BaselineData = new DataVector;
-  int usb = 0;
   for(int i = 0; i < num_nonFanUSB; i++) {
-    OVUSBStream[Datamap[i]].GetBaselineData(BaselineData);
-    CalculatePedestal(BaselineData, baselines);
+    DataVector BaselineData;
+    OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
+    CalculatePedestal(&BaselineData, baselines);
     OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
-    usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
-    if(!WriteBaselineTable(baselines,usb)) {
+    const int usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
+    if(!WriteBaselineTable(baselines, usb)) {
       log_msg(LOG_ERR, "Fatal Error writing baseline table to MySQL database\n");
       return false;
     }
-    BaselineData->clear();
   }
 
   for(int i = 0; i<maxModules; i++)
     delete [] baselines[i];
   delete [] baselines;
-  delete BaselineData;
 
   return true;
 }
