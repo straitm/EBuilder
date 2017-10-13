@@ -723,34 +723,30 @@ static bool WriteBaselineTable(int **baseptr, int usb)
 
 static bool GetBaselines()
 {
-  // Search baseline directory for files and sort them lexigraphically
-  vector<string> in_files_tmp;
-  if(GetDir(BinaryDir, in_files_tmp, false, true)) { // Get baselines too
-    if(errno)
-      log_msg(LOG_ERR, "Error (%s) opening binary "
-        "directory %s for baselines\n", strerror(errno), BinaryDir.c_str());
-    return false;
-  }
-  else {
-    printf("Processing baselines...\n");
+  // Check for a baseline file directory with the right right number of files.
+  {
+    vector<string> all_files;
+    if(GetDir(BinaryDir, all_files, false, true)) {
+      if(errno)
+        log_msg(LOG_ERR, "Error (%s) opening binary "
+          "directory %s for baselines\n", strerror(errno), BinaryDir.c_str());
+      return false;
+    }
+
+    vector<string> baseline_files;
+    for(vector<string>::iterator f = all_files.begin(); f != all_files.end(); f++)
+      if(f->find("baseline") != string::npos)
+        baseline_files.push_back(*f);
+
+    if(baseline_files.size() != num_nonFanUSB) {
+      log_msg(LOG_ERR, "Error: Baseline file count (%lu) != "
+        "numUSB (%u) in directory %s\n", (long int)baseline_files.size(), numUSB,
+         BinaryDir.c_str());
+      return false;
+    }
   }
 
-  // Preparing for baseline shift
-  vector<string> baseline_files;
-  for(vector<string>::iterator file = in_files_tmp.begin();
-      file != in_files_tmp.end(); file++)
-    if(file->find("baseline") != string::npos)
-      baseline_files.push_back(*file);
-
-  sort(baseline_files.begin(), baseline_files.end());
-
-  // Sanity check on number of baseline files
-  if(baseline_files.size() != num_nonFanUSB) {
-    log_msg(LOG_ERR, "Fatal Error: Baseline file count (%lu) != "
-      "numUSB (%u) in directory %s\n", (long int)baseline_files.size(), numUSB,
-       BinaryDir.c_str());
-    return false;
-  }
+  printf("Processing baselines...\n");
 
   // Set USB numbers for each OVUSBStream and load baseline files
   for(unsigned int i = 0; i < num_nonFanUSB; i++) {
