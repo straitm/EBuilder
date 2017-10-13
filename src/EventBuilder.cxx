@@ -96,14 +96,16 @@ static long int *maxcount_16ns_hi; // for sync overflows for all boards
 // set in read_summary_table() and main()
 static RunMode EBRunMode = kNormal;
 
-static bool write_ebretval(const int val)
+static void write_ebretval(const int val)
 {
+  return; // XXX No database for now
+
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
 
   if(!myconn.connect(database, server, username, password)) {
     log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
       database, server);
-    return false;
+    return;
   }
 
   char query_string[BUFSIZE];
@@ -114,27 +116,20 @@ static bool write_ebretval(const int val)
   mysqlpp::StoreQueryResult res = query.store();
 
   if(res.num_rows() == 1){ // Run has never been reprocessed with this configuration
-
     sprintf(query_string, "Update OV_runsummary set EBretval = '%d' "
       "where Run_number = '%s';", val, RunNumber.c_str());
 
     mysqlpp::Query query2 = myconn.query(query_string);
-    if(!query2.execute()) {
+    if(!query2.execute())
       log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n", query_string, query2.error());
-      myconn.disconnect();
-      return false;
-    }
   }
   else {
     log_msg(LOG_WARNING,
       "Did not find unique OV_runsummary entry for run %s in eb_writeretval\n",
       RunNumber.c_str());
-    myconn.disconnect();
-    return false;
   }
 
   myconn.disconnect();
-  return true;
 }
 
 
