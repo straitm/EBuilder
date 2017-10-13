@@ -727,8 +727,8 @@ static bool GetBaselines()
   vector<string> in_files_tmp;
   if(GetDir(BinaryDir, in_files_tmp, false, true)) { // Get baselines too
     if(errno)
-      log_msg(LOG_ERR, "Fatal Error (%s) opening binary "
-        "directory %s for baselines\n", "" /*strerror(errno)*/, BinaryDir.c_str());
+      log_msg(LOG_ERR, "Error (%s) opening binary "
+        "directory %s for baselines\n", strerror(errno), BinaryDir.c_str());
     return false;
   }
   else {
