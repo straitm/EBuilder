@@ -69,10 +69,10 @@ static char database[BUFSIZE] = {0};
 // Set in read_summary_table() from database information and used throughout
 static int numUSB = 0;
 static int num_nonFanUSB = 0;
-static map<int,int> Datamap; // Maps numerical ordering of non-Fan-in
+static map<int, int> Datamap; // Maps numerical ordering of non-Fan-in
                              // USBs to all numerical ordering of all USBs
-static map<int,int*> PMTOffsets; // Map to hold offsets for each PMT board
-static map<int,int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
+static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
+static map<int, int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                   // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
 static string BinaryDir; // Path to data
@@ -94,25 +94,25 @@ static bool write_ebretval(const int val)
 
   if(!myconn.connect(database, server, username, password)) {
     log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database,server);
+      database, server);
     return false;
   }
 
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"SELECT Run_number FROM OV_runsummary "
+  sprintf(query_string, "SELECT Run_number FROM OV_runsummary "
     "WHERE Run_number = '%s';", RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
 
   if(res.num_rows() == 1){ // Run has never been reprocessed with this configuration
 
-    sprintf(query_string,"Update OV_runsummary set EBretval = '%d' "
-      "where Run_number = '%s';", val,RunNumber.c_str());
+    sprintf(query_string, "Update OV_runsummary set EBretval = '%d' "
+      "where Run_number = '%s';", val, RunNumber.c_str());
 
     mysqlpp::Query query2 = myconn.query(query_string);
     if(!query2.execute()) {
-      log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n",query_string,query2.error());
+      log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n", query_string, query2.error());
       myconn.disconnect();
       return false;
     }
@@ -155,7 +155,7 @@ static int open_file(string name)
 {
   int temp_dataFile = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
   if ( temp_dataFile < 0 ) {
-    log_msg(LOG_CRIT,"Fatal Error: failed to open file %s\n",name.c_str());
+    log_msg(LOG_CRIT, "Fatal Error: failed to open file %s\n", name.c_str());
     write_ebretval(-1);
     exit(1);
   }
@@ -165,8 +165,8 @@ static int open_file(string name)
 static int check_disk_space(string dir)
 {
   struct statvfs fiData;
-  if((statvfs(dir.c_str(),&fiData)) < 0 ) {
-    log_msg(LOG_NOTICE, "Error: Failed to stat %s\n",dir.c_str());
+  if((statvfs(dir.c_str(), &fiData)) < 0 ) {
+    log_msg(LOG_NOTICE, "Error: Failed to stat %s\n", dir.c_str());
     return 0;
   }
   else {
@@ -175,12 +175,12 @@ static int check_disk_space(string dir)
         (int)(100*(double)fiData.f_bfree/(double)fiData.f_blocks);
       if(free_space_percent < 3) {
         log_msg(LOG_ERR, "Error: Can't write to disk: Found disk "
-          ">97 percent full: statvfs called on %s\n",dir.c_str());
+          ">97 percent full: statvfs called on %s\n", dir.c_str());
         return -1;
       }
     }
     else {
-      log_msg(LOG_ERR, "Error: statvfs failed to read blocks in %s\n",dir.c_str());
+      log_msg(LOG_ERR, "Error: statvfs failed to read blocks in %s\n", dir.c_str());
       return -1;
     }
   }
@@ -217,7 +217,7 @@ static void check_status()
         if(Ddelay % 3 == 0) { // Every minute of recovery
           Ddelay /= 3;
           log_msg(LOG_NOTICE, "Process has reduced data processing delay by %d "
-            "min since starting\n",Ddelay);
+            "min since starting\n", Ddelay);
         }
       }
     }
@@ -233,7 +233,7 @@ static bool LoadRun()
   files.clear();
   if(GetDir(BinaryDir, files)) {
     if(errno) {
-      log_msg(LOG_CRIT, "Error(%d) opening dir %s\n",errno,BinaryDir.c_str());
+      log_msg(LOG_CRIT, "Error(%d) opening dir %s\n", errno, BinaryDir.c_str());
       write_ebretval(-1);
       exit(1);
     }
@@ -244,13 +244,13 @@ static bool LoadRun()
     OV_EB_State = initial_delay;
   }
 
-  sort(files.begin(),files.end());
+  sort(files.begin(), files.end());
 
   const string TempProcessedOutput = OutputFolder + "/processed";
   umask(0);
   if(mkdir(OutputFolder.c_str(), 0777)) {
     if(EBRunMode != kRecovery) {
-      log_msg(LOG_CRIT, "Error creating output file %s\n",OutputFolder.c_str());
+      log_msg(LOG_CRIT, "Error creating output file %s\n", OutputFolder.c_str());
       write_ebretval(-1);
       exit(1);
     }
@@ -265,7 +265,7 @@ static bool LoadRun()
   }
   else { // FixMe: To optimize (logic) (Was never done for Double Chooz - needed?)
     if(EBRunMode == kRecovery) {
-      log_msg(LOG_CRIT,"Output dirs did not already exist in recovery mode.\n");
+      log_msg(LOG_CRIT, "Output dirs did not already exist in recovery mode.\n");
       write_ebretval(-1);
       exit(1);
     }
@@ -281,7 +281,7 @@ static int LoadAll()
 {
   const int r = check_disk_space(BinaryDir);
   if(r < 0) {
-    log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n",BinaryDir.c_str());
+    log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n", BinaryDir.c_str());
     return r;
   }
 
@@ -289,14 +289,14 @@ static int LoadAll()
     // FixME: Is 2*numUSB sufficient to guarantee a match?
     if((int)files.size() <= 3*numUSB) {
       files.clear();
-      if(GetDir(BinaryDir,files))
+      if(GetDir(BinaryDir, files))
         return 0;
     }
   }
   if((int)files.size() < numUSB)
     return 0;
 
-  sort(files.begin(),files.end()); // FixME: Is it safe to avoid this every time?
+  sort(files.begin(), files.end()); // FixME: Is it safe to avoid this every time?
 
   vector<string>::iterator fname_begin=files.begin();
 
@@ -315,8 +315,8 @@ static int LoadAll()
   string fusb;
   for(int k = 0; k<numUSB; k++) {
     for(int j = k; j<(int)files.size(); j++) {
-      fusb = (files[j]).substr(fname_it_delim+1,(files[j]).npos);
-      if(strtol(fusb.c_str(),NULL,10) == OVUSBStream[k].GetUSB()) {
+      fusb = (files[j]).substr(fname_it_delim+1, (files[j]).npos);
+      if(strtol(fusb.c_str(), NULL, 10) == OVUSBStream[k].GetUSB()) {
         temp3 = files[j];
         files[j] = files[k];
         files[k] = temp3;
@@ -337,15 +337,15 @@ static int LoadAll()
   string base_filename;
   for(int k=0; k<numUSB; k++) {
     fname_it_delim = fname_begin->find(fdelim);
-    ftime_min = fname_begin->substr(0,fname_it_delim);
-    fusb = fname_begin->substr(fname_it_delim+1,fname_begin->npos);
+    ftime_min = fname_begin->substr(0, fname_it_delim);
+    fusb = fname_begin->substr(fname_it_delim+1, fname_begin->npos);
     // Error: All usbs should have been assigned by MySQL
     if(OVUSBStream[k].GetUSB() == -1) {
       log_msg(LOG_CRIT, "Fatal Error: USB number unassigned\n");
       return -1;
     }
     else { // Check to see that USB numbers are aligned
-      if(OVUSBStream[k].GetUSB() != strtol(fusb.c_str(),NULL,10)) {
+      if(OVUSBStream[k].GetUSB() != strtol(fusb.c_str(), NULL, 10)) {
         log_msg(LOG_CRIT, "Fatal Error: USB number misalignment\n");
         return -1;
       }
@@ -360,7 +360,7 @@ static int LoadAll()
     fname_begin++; // Increment file name iterator
   }
 
-  files.assign(fname_begin,files.end());
+  files.assign(fname_begin, files.end());
   return 1;
 }
 
@@ -443,7 +443,7 @@ static void BuildEvent(DataVector *OutDataVector,
     else {
       if(overflow[module]) {
         log_msg(LOG_WARNING, "Module %d max clock count hi: %ld\tlo: %ld\n",
-          module,maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
+          module, maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
         overflow[module] = false;
@@ -478,7 +478,7 @@ static void BuildEvent(DataVector *OutDataVector,
              != time_16ns_sync)
             log_msg(LOG_ERR, "Trigger box module %d received sync pulse at "
               "clock count %ld instead of expected clock count (%ld).\n",
-              module,time_16ns_sync,expected_time_16ns_sync);
+              module, time_16ns_sync, expected_time_16ns_sync);
         }
       }
     }
@@ -557,9 +557,9 @@ static bool parse_options(int argc, char **argv)
 
     switch (c) {
     // XXX no overflow protection
-    case 'r': strcpy(buf,optarg); RunNumber = buf; break;
-    case 'H': strcpy(buf,optarg); OVDAQHost = buf; break;
-    case 'R': strcpy(buf,optarg); OVRunType = buf;  break;
+    case 'r': strcpy(buf, optarg); RunNumber = buf; break;
+    case 'H': strcpy(buf, optarg); OVDAQHost = buf; break;
+    case 'R': strcpy(buf, optarg); OVRunType = buf;  break;
 
     case 't': Threshold = atoi(optarg); break;
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
@@ -627,14 +627,14 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
     if(type) {
       if(module > maxModules)
         log_msg(LOG_ERR, "Fatal Error: Module number requested "
-          "(%d) out of range in calculate pedestal\n",module);
+          "(%d) out of range in calculate pedestal\n", module);
 
       for(int i = 7; i+1 < (int)BaselineDataIt->size(); i=i+2) {
         charge = BaselineDataIt->at(i);
         channel = BaselineDataIt->at(i+1); // Channels run 0-63
         if(channel >= numChannels)
           log_msg(LOG_ERR, "Fatal Error: Channel number requested "
-            "(%d) out of range in calculate pedestal\n",channel);
+            "(%d) out of range in calculate pedestal\n", channel);
         // Should these be modified to better handle large numbers of baseline
         // triggers?
         baseline[module][channel] = (baseline[module][channel]*
@@ -656,7 +656,7 @@ static bool WriteBaselineTable(int **baseptr, int usb)
 
   if(!myconn.connect(database, server, username, password)) {
     log_msg(LOG_NOTICE, "Cannot connect to MySQL database %s at %s\n",
-      database,server);
+      database, server);
     return false;
   }
 
@@ -683,23 +683,23 @@ static bool WriteBaselineTable(int **baseptr, int usb)
       if( *(*(baseptr+i) + j) > 0) {
 
         if(j==0) {
-          sprintf(mybuff,",%d",PMTUniqueMap[1000*usb+i]);
+          sprintf(mybuff, ",%d", PMTUniqueMap[1000*usb+i]);
           baseline_values.append(mybuff); // Insert board_address
         }
 
-        sprintf(mybuff,",%d",*(*(baseptr+i) + j)); // Insert baseline value
+        sprintf(mybuff, ",%d", *(*(baseptr+i) + j)); // Insert baseline value
         baseline_values.append(mybuff);
 
         if(j==numChannels-1) { // last baseline value has been inserted
 
           sprintf(query_string, "INSERT INTO OV_pedestal "
             "VALUES ('%s','%s','%s',''%s);",
-            RunNumber.c_str(),mydate,mytime,baseline_values.c_str());
+            RunNumber.c_str(), mydate, mytime, baseline_values.c_str());
 
           mysqlpp::Query query = myconn.query(query_string);
           if(!query.execute()) {
             log_msg(LOG_NOTICE, "MySQL query (%s) error: %s\n",
-                    query_string,query.error());
+                    query_string, query.error());
             myconn.disconnect();
             return false;
           }
@@ -715,14 +715,13 @@ static bool WriteBaselineTable(int **baseptr, int usb)
 
 static bool GetBaselines()
 {
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Search baseline directory for files and sort them lexigraphically
   vector<string> in_files_tmp;
   vector<string>::iterator in_files_tmp_it;
   if(GetDir(BinaryDir, in_files_tmp, 0, 1)) { // Get baselines too
     if(errno)
       log_msg(LOG_ERR, "Fatal Error(%d) opening binary "
-        "directory %s for baselines\n",errno,BinaryDir.c_str());
+        "directory %s for baselines\n", errno, BinaryDir.c_str());
     return false;
   }
   else {
@@ -739,9 +738,8 @@ static bool GetBaselines()
     }
   }
 
-  sort(in_files.begin(),in_files.end());
+  sort(in_files.begin(), in_files.end());
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Sanity check on number of baseline files
   if((int)in_files.size() != num_nonFanUSB) {
     log_msg(LOG_ERR, "Fatal Error: Baseline file count (%lu) != "
@@ -750,7 +748,6 @@ static bool GetBaselines()
     return false;
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set USB numbers for each OVUSBStream and load baseline files
   for(int i = 0; i < num_nonFanUSB; i++) {
     // Error: all usbs should have been assigned from MySQL
@@ -763,12 +760,11 @@ static bool GetBaselines()
       return false; // Load baseline file for data streams
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Decode all files at once and load into memory
   for(int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
-    printf("Starting Thread %d\n",Datamap[j]);
+    printf("Starting Thread %d\n", Datamap[j]);
     gThreads[Datamap[j]] =
-      new TThread(Form("gThreads%d",Datamap[j]), handle, (void*) Datamap[j]);
+      new TThread(Form("gThreads%d", Datamap[j]), handle, (void*) Datamap[j]);
     gThreads[Datamap[j]]->Run();
   }
 
@@ -788,7 +784,6 @@ static bool GetBaselines()
 
   cout << "Joined all threads!\n";
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Build baseline tables
   int **baselines = new int*[maxModules];
   for(int i = 0; i<maxModules; i++) {
@@ -802,7 +797,7 @@ static bool GetBaselines()
   int usb = 0;
   for(int i = 0; i < num_nonFanUSB; i++) {
     OVUSBStream[Datamap[i]].GetBaselineData(BaselineData);
-    CalculatePedestal(BaselineData,baselines);
+    CalculatePedestal(BaselineData, baselines);
     OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
     usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
     if(!WriteBaselineTable(baselines,usb)) {
@@ -828,29 +823,29 @@ static bool write_ebsummary()
 
   if(!myconn.connect(database, server, username, password)) {
     log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database,server);
+      database, server);
     return false;
   }
 
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"SELECT Path FROM OV_ebuilder "
+  sprintf(query_string, "SELECT Path FROM OV_ebuilder "
     "WHERE Run_number = '%s', SW_Threshold = '%04d', "
     "SW_TriggerMode = '%01d', Res1 = '00', Res2 = '00';",
-    RunNumber.c_str(),Threshold,(int)EBTrigMode);
+    RunNumber.c_str(), Threshold, (int)EBTrigMode);
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
 
   if(res.num_rows() == 0){ // Run has never been reprocessed with this configuration
-    sprintf(query_string,"INSERT INTO OV_ebuilder "
+    sprintf(query_string, "INSERT INTO OV_ebuilder "
       "(Run_number,Path,SW_Threshold,SW_TriggerMode,Res1,Res2) "
       "VALUES ('%s','%s','%04d','%01d','00','00');",
-      RunNumber.c_str(),OutputFolder.c_str(),Threshold,(int)EBTrigMode);
+      RunNumber.c_str(), OutputFolder.c_str(), Threshold, (int)EBTrigMode);
 
     mysqlpp::Query query2 = myconn.query(query_string);
     if(!query2.execute()) {
       log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n",
-        query_string,query2.error());
+        query_string, query2.error());
       myconn.disconnect();
       return false;
     }
@@ -864,7 +859,7 @@ static void die_with_log(const char * const format, ...)
 {
   va_list ap;
   va_start(ap, format);
-  log_msg(LOG_CRIT,format, ap);
+  log_msg(LOG_CRIT, format, ap);
   write_ebretval(-1);
   exit(127);
 }
@@ -884,8 +879,8 @@ static string cpp_sprintf(const char * format, ...)
 static char * get_config_table_name(mysqlpp::Connection & myconn)
 {
   char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT config_table FROM OV_runsummary "
-    "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
+  sprintf(query_string, "SELECT config_table FROM OV_runsummary "
+    "WHERE Run_number = '%s' ORDER BY start_time DESC;", RunNumber.c_str());
   const mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
   if(res.num_rows() < 1)
     die_with_log("Found no matching entry for run %s in OV_runsummary\n",
@@ -894,13 +889,13 @@ static char * get_config_table_name(mysqlpp::Connection & myconn)
     // Really using the most recent entry?  I think res[0] probably means
     // the oldest entry, but I'm not sure.
     log_msg(LOG_WARNING, "Found more than one entry for run %s "
-      "in OV_runsummary. Using most recent entry.\n",RunNumber.c_str());
+      "in OV_runsummary. Using most recent entry.\n", RunNumber.c_str());
   else
     log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
       RunNumber.c_str());
 
   static char config_table[BUFSIZE];
-  strcpy(config_table,res[0][0].c_str());
+  strcpy(config_table, res[0][0].c_str());
   return config_table;
 }
 
@@ -912,13 +907,13 @@ static vector<int> get_distinct_usb_serials(mysqlpp::Connection & myconn,
                                             const bool positiveHV)
 {
   char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT DISTINCT USB_serial FROM %s %s ORDER BY USB_serial;",
+  sprintf(query_string, "SELECT DISTINCT USB_serial FROM %s %s ORDER BY USB_serial;",
     config_table, positiveHV?"WHERE HV != -999":"");
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  log_msg(LOG_INFO,"Found %u distinct %sUSBs in table %s\n",
+  log_msg(LOG_INFO, "Found %u distinct %sUSBs in table %s\n",
           res.num_rows(), positiveHV?"non-Fan-in ":"", config_table);
   vector<int> serials;
   for(unsigned int i = 0; i < res.num_rows(); i++)
@@ -932,13 +927,13 @@ static vector<usb_sbop> get_sbops(mysqlpp::Connection & myconn,
                                   const char * const config_table)
 {
   char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT USB_serial, board_number, offset, pmtboard_u FROM %s;",
+  sprintf(query_string, "SELECT USB_serial, board_number, offset, pmtboard_u FROM %s;",
     config_table);
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res=query.store();
   if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n", query_string,query.error());
-  log_msg(LOG_INFO,"Found time offsets for online table %s\n",config_table);
+    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
+  log_msg(LOG_INFO, "Found time offsets for online table %s\n", config_table);
 
   vector<usb_sbop> sbops;
   for(unsigned int i = 0; i < res.num_rows(); i++){
@@ -955,12 +950,12 @@ static std::pair<int, int> board_count(mysqlpp::Connection & myconn,
                                        const char * const config_table)
 {
   char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT DISTINCT pmtboard_u FROM %s;",config_table);
+  sprintf(query_string, "SELECT DISTINCT pmtboard_u FROM %s;", config_table);
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  log_msg(LOG_INFO,"Found %u distinct PMT boards in table %s\n",
+  log_msg(LOG_INFO, "Found %u distinct PMT boards in table %s\n",
           res.num_rows(), config_table);
 
   int max = 0;
@@ -968,7 +963,7 @@ static std::pair<int, int> board_count(mysqlpp::Connection & myconn,
     const int pmtnum = atoi(res[i][0]);
     if(pmtnum > max) max = pmtnum;
   }
-  log_msg(LOG_INFO,"Found max PMT board number %d in table %s\n", max, config_table);
+  log_msg(LOG_INFO, "Found max PMT board number %d in table %s\n", max, config_table);
 
   return std::pair<int, int>(res.num_rows(), max);
 }
@@ -985,17 +980,17 @@ static some_run_info get_some_run_info(mysqlpp::Connection & myconn)
   mysqlpp::Query query = myconn.query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n", query_string,query.error());
+    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
   if(res.num_rows() > 1) // Check that OVRunType is the same
     log_msg(LOG_WARNING, "Found more than one entry for run %s in "
-      "OV_runsummary. Using most recent entry\n",RunNumber.c_str());
+      "OV_runsummary. Using most recent entry\n", RunNumber.c_str());
   else
-    log_msg(LOG_INFO,"Found MySQL run summary entry for run: %s\n",
+    log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
             RunNumber.c_str());
 
   if(OVRunType != res[0][0].c_str())
     die_with_log("MySQL Run Type: %s does not match command line "
-      "Run Type: %s\n", res[0][0].c_str(),OVRunType.c_str());
+      "Run Type: %s\n", res[0][0].c_str(), OVRunType.c_str());
 
   // Sanity check for each run mode
   if(EBRunMode == kReprocess &&
@@ -1043,7 +1038,7 @@ static some_run_info get_some_run_info(mysqlpp::Connection & myconn)
 static unsigned int get_ntimesprocessed(mysqlpp::Connection & myconn)
 {
   char query_string[BUFSIZE];
-  sprintf(query_string,"SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
+  sprintf(query_string, "SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
           RunNumber.c_str());
   mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
   return res.num_rows();
@@ -1074,16 +1069,16 @@ static void read_summary_table()
   char DCDatabase_path[BUFSIZE];
 
   // XXX we don't have these environment variables.
-  sprintf(DCDatabase_path,"%s/config/DCDatabase.config",getenv("DCONLINE_PATH"));
+  sprintf(DCDatabase_path, "%s/config/DCDatabase.config", getenv("DCONLINE_PATH"));
 
-  sprintf(server,"%s",config_string(DCDatabase_path,"DCDB_SERVER_HOST"));
-  sprintf(username,"%s",config_string(DCDatabase_path,"DCDB_OV_USER"));
-  sprintf(password,"%s",config_string(DCDatabase_path,"DCDB_OV_PASSWORD"));
-  sprintf(database,"%s",config_string(DCDatabase_path,"DCDB_OV_DBNAME"));
+  sprintf(server, "%s", config_string(DCDatabase_path, "DCDB_SERVER_HOST"));
+  sprintf(username, "%s", config_string(DCDatabase_path, "DCDB_OV_USER"));
+  sprintf(password, "%s", config_string(DCDatabase_path, "DCDB_OV_PASSWORD"));
+  sprintf(database, "%s", config_string(DCDatabase_path, "DCDB_OV_DBNAME"));
 
   if(!myconn.connect(database, server, username, password))
     die_with_log("Cannot connect to MySQL database %s at %s\n",
-      database,server);
+      database, server);
 
   const char * const config_table = get_config_table_name(myconn);
 
@@ -1093,7 +1088,7 @@ static void read_summary_table()
   numUSB        = usbserials.size();
   num_nonFanUSB = nonfanin_serials.size();
 
-  map<int,int> usbmap; // Maps USB number to numerical ordering of all USBs
+  map<int, int> usbmap; // Maps USB number to numerical ordering of all USBs
   for(unsigned int i = 0; i < usbserials.size(); i++) {
     usbmap[usbserials[i]] = i;
     OVUSBStream[i].SetUSB(usbserials[i]);
@@ -1119,7 +1114,7 @@ static void read_summary_table()
   }
 
   // USB to array of PMT offsets
-  for(map<int,int*>::iterator os = PMTOffsets.begin(); os != PMTOffsets.end(); os++)
+  for(map<int, int*>::iterator os = PMTOffsets.begin(); os != PMTOffsets.end(); os++)
     OVUSBStream[usbmap[os->first]].SetOffset(os->second);
 
   // Count the number of boards in this setup
@@ -1146,7 +1141,7 @@ static void read_summary_table()
   const some_run_info runinfo = get_some_run_info(myconn);
 
   // Set the Data Folder and Ouput Dir
-  const string OutputDir = cpp_sprintf("/data%d/OVDAQ/",OutDisk);
+  const string OutputDir = cpp_sprintf("/data%d/OVDAQ/", OutDisk);
   OutputFolder = OutputDir + "DATA/";
 
   // Assign output folder based on disk number
@@ -1161,7 +1156,7 @@ static void read_summary_table()
     // False if non-baseline files are found
     if(GetDir(BinaryDir, initial_files, 0, 0)) {
       if(errno)
-        die_with_log("Error(%d) opening directory %s\n", errno,BinaryDir.c_str());
+        die_with_log("Error(%d) opening directory %s\n", errno, BinaryDir.c_str());
       if(runinfo.has_stoptime){ // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
       }
@@ -1175,7 +1170,7 @@ static void read_summary_table()
       EBcomment = runinfo.ebcomment;
     }
   }
-  log_msg(LOG_INFO,"OV EBuilder Run Mode: %d\n",EBRunMode);
+  log_msg(LOG_INFO, "OV EBuilder Run Mode: %d\n", EBRunMode);
 
   if(EBRunMode == kRecovery && runinfo.has_ebsubrun)
     SubRunCounter = timestampsperoutput*runinfo.ebsubrun;
@@ -1220,15 +1215,15 @@ static void read_summary_table()
       if(GetDir(tempdir, old_files, 1))
         if(errno)
           die_with_log("Error(%d) opening directory %s\n",
-                  errno,tempdir.c_str());
+                  errno, tempdir.c_str());
 
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
         if(remove(tempfile.c_str()))
-          die_with_log("Error deleting file %s\n",tempfile.c_str());
+          die_with_log("Error deleting file %s\n", tempfile.c_str());
       }
       if(rmdir(tempdir.c_str()))
-        die_with_log("Error deleting folder %s\n",tempdir.c_str());
+        die_with_log("Error deleting folder %s\n", tempdir.c_str());
       old_files.clear();
 
       tempdir = same_config_path + "Run_" + RunNumber;
@@ -1239,10 +1234,10 @@ static void read_summary_table()
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
         if(remove(tempfile.c_str()))
-          die_with_log("Error deleting file %s\n",tempfile.c_str());
+          die_with_log("Error deleting file %s\n", tempfile.c_str());
       }
       if(rmdir(tempdir.c_str()))
-        die_with_log("Error deleting folder %s\n",tempdir.c_str());
+        die_with_log("Error deleting folder %s\n", tempdir.c_str());
     }
 
     // Create folder based on parameters
@@ -1251,7 +1246,7 @@ static void read_summary_table()
     if(mkdir(OutputFolder.c_str(), 0777)) {
       if(errno != EEXIST)
         die_with_log("Error (%d) creating output folder %s\n",
-                errno,OutputFolder.c_str());
+                errno, OutputFolder.c_str());
       log_msg(LOG_WARNING, "Output folder %s already exists.\n",
         OutputFolder.c_str());
     }
@@ -1266,11 +1261,11 @@ static void read_summary_table()
     if(GetDir(decoded_dir, initial_files, 1)) {
       if(errno)
         die_with_log("Error (%d) opening directory %s\n",
-                errno,decoded_dir.c_str());
+                errno, decoded_dir.c_str());
       die_with_log("No decoded files found in directory %s\n",
         decoded_dir.c_str());
     }
-    sort(initial_files.begin(),initial_files.end());
+    sort(initial_files.begin(), initial_files.end());
 
     // Determine files to rename
     vector<string>::iterator fname_begin=initial_files.begin();
@@ -1280,11 +1275,11 @@ static void read_summary_table()
     const size_t fname_it_delim = fname_begin->find(fdelim);
 
     vector<string> myfiles[maxUSB];
-    map<int,int> mymap;
+    map<int, int> mymap;
     int mapindex = 0;
     for(int k = 0; k<(int)initial_files.size(); k++) {
-      string fusb = (initial_files[k]).substr(fname_it_delim+1,2);
-      const int iusb = (int)strtol(fusb.c_str(),NULL,10);
+      string fusb = (initial_files[k]).substr(fname_it_delim+1, 2);
+      const int iusb = (int)strtol(fusb.c_str(), NULL, 10);
       if(!mymap.count(iusb)) mymap[iusb] = mapindex++;
       myfiles[mymap[iusb]].push_back(initial_files[k]);
     }
@@ -1315,18 +1310,18 @@ static void read_summary_table()
         if(pos == string::npos)
           die_with_log("Unexpected decoded-data file name: %s\n",
             fname.c_str());
-        fname.replace(pos,sizeof("decoded")-1,"binary");
+        fname.replace(pos, sizeof("decoded")-1, "binary");
       }
       {
         const size_t pos = fname.find(".done");
         if(pos == string::npos)
           die_with_log("Unexpected decoded-data file name: %s\n",
             fname.c_str());
-        fname.replace(pos,sizeof(".done")-1,"");
+        fname.replace(pos, sizeof(".done")-1, "");
       }
 
       while(rename(files_to_rename[i].c_str(), fname.c_str())) {
-        log_msg(LOG_ERR,"Could not rename decoded data file.\n");
+        log_msg(LOG_ERR, "Could not rename decoded data file.\n");
         sleep(1);
       }
     }
@@ -1340,18 +1335,18 @@ static bool write_summary_table(long int lasttime, int subrun)
 
   if(!myconn.connect(database, server, username, password)) {
     log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database,server);
+      database, server);
     return false;
   }
 
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"UPDATE OV_runsummary SET EBcomment = '%ld', "
+  sprintf(query_string, "UPDATE OV_runsummary SET EBcomment = '%ld', "
     "EBsubrunnumber = '%d' WHERE Run_number = '%s';",
-    lasttime,subrun,RunNumber.c_str());
+    lasttime, subrun, RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   if(!query.execute()) {
-    log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n",query_string,query.error());
+    log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n", query_string, query.error());
     myconn.disconnect();
     return false;
   }
@@ -1367,18 +1362,18 @@ static bool read_stop_time()
 
   if(!myconn.connect(database, server, username, password)) {
     log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database,server);
+      database, server);
     return false;
   }
 
   char query_string[BUFSIZE];
 
-  sprintf(query_string,"SELECT stop_time FROM OV_runsummary "
-    "WHERE Run_number = '%s' ORDER BY start_time DESC;",RunNumber.c_str());
+  sprintf(query_string, "SELECT stop_time FROM OV_runsummary "
+    "WHERE Run_number = '%s' ORDER BY start_time DESC;", RunNumber.c_str());
   mysqlpp::Query query = myconn.query(query_string);
   res = query.store();
   if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n",query_string,query.error());
+    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n", query_string, query.error());
     myconn.disconnect();
     return false;
   }
@@ -1388,7 +1383,7 @@ static bool read_stop_time()
     return false;
   }
 
-  log_msg(LOG_INFO,"Found MySQL stop time for run: %s\n",RunNumber.c_str());
+  log_msg(LOG_INFO, "Found MySQL stop time for run: %s\n", RunNumber.c_str());
   myconn.disconnect();
 
   return true;
@@ -1401,7 +1396,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
     data_fd = open_file(myfname);
     if(data_fd <= 0) {
       log_msg(LOG_ERR, "Cannot open file %s to write "
-        "end-of-run block for run %s\n",myfname.c_str(),RunNumber.c_str());
+        "end-of-run block for run %s\n", myfname.c_str(), RunNumber.c_str());
       return false;
     }
   }
@@ -1415,7 +1410,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
     return false;
   } // To be optimized
 
-  if(close(data_fd) < 0) log_msg(LOG_ERR,"Could not close output data file\n");
+  if(close(data_fd) < 0) log_msg(LOG_ERR, "Could not close output data file\n");
 
   return true;
 }
@@ -1442,16 +1437,14 @@ int main(int argc, char **argv)
 
   start_log(); // establish syslog connection
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load OV run_summary table
   // This should handle reprocessing eventually <-- relevant for CRT?
   read_summary_table();
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Load baseline data
   time_t timeout = time(0);
   while(!GetBaselines()) { // Get baselines
-    if((int)difftime(time(0),timeout) > MAXTIME) {
+    if((int)difftime(time(0), timeout) > MAXTIME) {
       log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
         MAXTIME);
       write_ebretval(-1);
@@ -1462,19 +1455,17 @@ int main(int argc, char **argv)
     }
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Set Thresholds. Only for data streams
   for(int i = 0; i < num_nonFanUSB; i++)
-    OVUSBStream[Datamap[i]].SetThresh(Threshold,(int)EBTrigMode);
+    OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // Locate existing binary data and create output folder
   OutputFolder = OutputFolder + "Run_" + RunNumber;
   timeout = time(0);
 
   while(!LoadRun()) {
-    if((int)difftime(time(0),timeout) > MAXTIME) {
-      log_msg(LOG_CRIT,"Error: Binary data not found in the last %d seconds.\n",
+    if((int)difftime(time(0), timeout) > MAXTIME) {
+      log_msg(LOG_CRIT, "Error: Binary data not found in the last %d seconds.\n",
         MAXTIME);
       write_ebretval(-1);
       return 127;
@@ -1482,7 +1473,6 @@ int main(int argc, char **argv)
     else sleep(1);
   }
 
-  //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   // This is the main Event Builder loop
   while(true) {
 
@@ -1500,12 +1490,12 @@ int main(int argc, char **argv)
             return 127;
           }
           cout << "Files are not ready...\n";
-          if((int)difftime(time(0),timeout) > ENDTIME) {
-            if(read_stop_time() || (int)difftime(time(0),timeout) > MAXTIME) {
+          if((int)difftime(time(0), timeout) > ENDTIME) {
+            if(read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME) {
               while(!write_endofrun_block(fname, dataFile)) sleep(1);
 
-              if((int)difftime(time(0),timeout) > MAXTIME)
-                log_msg(LOG_ERR,"No data found for %d seconds!  "
+              if((int)difftime(time(0), timeout) > MAXTIME)
+                log_msg(LOG_ERR, "No data found for %d seconds!  "
                     "Closing run %s without finding stop time on MySQL\n",
                     MAXTIME, RunNumber.c_str());
               else
@@ -1520,8 +1510,8 @@ int main(int argc, char **argv)
         }
 
         for(int j=0; j<numUSB; j++) { // Load all files in at once
-          printf("Starting Thread %d\n",j);
-          gThreads[j] = new TThread(Form("gThreads%d",j), handle, (void*) j);
+          printf("Starting Thread %d\n", j);
+          gThreads[j] = new TThread(Form("gThreads%d", j), handle, (void*) j);
           gThreads[j]->Run();
         }
 
@@ -1541,30 +1531,28 @@ int main(int argc, char **argv)
 
         cout << "Joined all threads!\n";
 
-        //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         // Rename files
         for(int i = 0; i<numUSB; i++) {
           string tempfilename = OVUSBStream[i].GetFileName();
           size_t mypos = tempfilename.find("binary");
           if(mypos != tempfilename.npos)
-            tempfilename.replace(mypos,6,"decoded");
+            tempfilename.replace(mypos, 6, "decoded");
           tempfilename += ".done";
 
-          while(rename(OVUSBStream[i].GetFileName(),tempfilename.c_str())) {
-            log_msg(LOG_ERR,"Could not rename binary data file.\n");
+          while(rename(OVUSBStream[i].GetFileName(), tempfilename.c_str())) {
+            log_msg(LOG_ERR, "Could not rename binary data file.\n");
             sleep(1);
           }
         }
       }
     }
 
-    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     // Open output data file
     // This should handle re-processing eventually
     if(EBRunMode == kRecovery) {
       if(OVUSBStream[0].GetTOLUTC() <= (unsigned long int)EBcomment) {
-        printf("Time stamp to process: %ld\n",OVUSBStream[0].GetTOLUTC());
-        printf("Recovery mode waiting to exceed time stamp %ld\n",EBcomment);
+        printf("Time stamp to process: %ld\n", OVUSBStream[0].GetTOLUTC());
+        printf("Recovery mode waiting to exceed time stamp %ld\n", EBcomment);
         dataFile = open_file("/dev/null");
       }
       else {
@@ -1575,7 +1563,7 @@ int main(int argc, char **argv)
     if(EBRunMode != kRecovery && SubRunCounter % timestampsperoutput == 0) {
       fname = OutputFolder + "/DCRunF" + RunNumber;
       char subrun[BUFSIZE];
-      sprintf(subrun,"%s%.5dOVDAQ", OVRunType.c_str(),
+      sprintf(subrun, "%s%.5dOVDAQ", OVRunType.c_str(),
               SubRunCounter/timestampsperoutput);
       fname.append(subrun);
       dataFile = open_file(fname);
@@ -1587,8 +1575,8 @@ int main(int argc, char **argv)
       CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
       if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) MinIndex = i;
     }
-    MinDataVector.assign(ExtraDataVector.begin(),ExtraDataVector.end());
-    MinIndexVector.assign(ExtraIndexVector.begin(),ExtraIndexVector.end());
+    MinDataVector.assign(ExtraDataVector.begin(), ExtraDataVector.end());
+    MinIndexVector.assign(ExtraIndexVector.begin(), ExtraIndexVector.end());
 
     while( CurrentDataVectorIt[MinIndex]!=CurrentDataVector[MinIndex].end() ) {
       // Until 1 USB stream finishes timestamp
@@ -1601,7 +1589,7 @@ int main(int argc, char **argv)
         vector<int> CurrentDataPacket = *(CurrentDataVectorIt[k]);
 
         // Find real minimum; no clock slew
-        if( LessThan(CurrentDataPacket,MinDataPacket,0) ) {
+        if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {
           // If current packet less than min packet, min = current
           MinDataPacket = CurrentDataPacket;
           MinIndex = k;
@@ -1610,7 +1598,7 @@ int main(int argc, char **argv)
       } // End of for loop: MinDataPacket has been filled appropriately
 
       if(MinDataVector.size() > 0) { // Check for equal events
-        if( LessThan(MinDataVector.back(), MinDataPacket,3) ) {
+        if( LessThan(MinDataVector.back(), MinDataPacket, 3) ) {
           // Ignore gaps which have consist of fewer than 4 clock cycles
 
           ++EventCounter;
@@ -1628,9 +1616,9 @@ int main(int argc, char **argv)
 
     // Clean up operations and store data for later
     for(int k=0; k<numUSB; k++)
-      CurrentDataVector[k].assign(CurrentDataVectorIt[k],CurrentDataVector[k].end());
-    ExtraDataVector.assign(MinDataVector.begin(),MinDataVector.end());
-    ExtraIndexVector.assign(MinIndexVector.begin(),MinIndexVector.end());
+      CurrentDataVector[k].assign(CurrentDataVectorIt[k], CurrentDataVector[k].end());
+    ExtraDataVector.assign(MinDataVector.begin(), MinDataVector.end());
+    ExtraIndexVector.assign(MinIndexVector.begin(), MinIndexVector.end());
 
     if(EBRunMode == kRecovery) {
       if(close(dataFile) < 0) {
@@ -1644,14 +1632,14 @@ int main(int argc, char **argv)
       ++SubRunCounter;
       if((SubRunCounter % timestampsperoutput == 0) && dataFile) {
         if(close(dataFile) < 0) {
-          log_msg(LOG_CRIT,"Fatal Error: Could not close output data file!\n");
+          log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
           write_ebretval(-1);
           return 127;
         }
         else {
           while(!write_summary_table(OVUSBStream[0].GetTOLUTC(),
                                      SubRunCounter/timestampsperoutput)) {
-            log_msg(LOG_NOTICE,"Error writing to OV_runsummary table.\n");
+            log_msg(LOG_NOTICE, "Error writing to OV_runsummary table.\n");
             sleep(1);
           }
         }
