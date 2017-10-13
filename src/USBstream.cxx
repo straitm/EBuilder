@@ -145,34 +145,29 @@ bool USBstream::GetNextTimeStamp(DataVector *vec)
   return true;
 }
 
-int USBstream::LoadFile(std::string nextfile)
+int USBstream::LoadFile(const std::string nextfile)
 {
-  sprintf(myfilename,"%s_%d",nextfile.c_str(),GetUSB());
+  if(IsOpen) return 1;
+
+  sprintf(myfilename, "%s_%d",nextfile.c_str(), GetUSB());
+  myFile = new std::fstream(myfilename, std::fstream::in | std::fstream::binary);
+
+  if(!myFile->is_open()) {
+    delete myFile;
+    log_msg(LOG_INFO, "Waiting for files...\n");
+    return 0;
+  }
 
   struct stat myfileinfo;
-  if(!IsOpen) {
-    myFile = new std::fstream(myfilename, std::fstream::in | std::fstream::binary);
-    if(myFile->is_open()) {
-      if(stat(myfilename, &myfileinfo) == 0 && //get file size
-         myfileinfo.st_size) {
-        IsOpen = true;
-        return 1;
-      }
-      myFile->close();
-      delete myFile; // Clean up
-      log_msg(LOG_ERR,"USB %d has died. Exiting.\n",myusb);
-      return -1;
-    }
-    else {
-      delete myFile;
-    }
-  }
-  else{
-    return 1;
+  if(stat(myfilename, &myfileinfo) != 0 || myfileinfo.st_size == 0) {
+    myFile->close();
+    delete myFile;
+    log_msg(LOG_ERR, "USB %d has died. Exiting.\n", myusb);
+    return -1;
   }
 
-  log_msg(LOG_INFO, "Waiting for files...\n");
-  return 0;
+  IsOpen = true;
+  return 1;
 }
 
 bool USBstream::decode()

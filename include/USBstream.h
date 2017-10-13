@@ -31,7 +31,7 @@ public:
 
   bool GetNextTimeStamp(DataVector *vec);
   void GetBaselineData(DataVector *vec);
-  int LoadFile(std::string nextfile);
+  int LoadFile(const std::string nextfile);
   bool decode();
 
 private:
