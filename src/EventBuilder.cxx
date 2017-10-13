@@ -712,7 +712,6 @@ static bool WriteBaselineTable(int **baseptr, int usb)
             myconn.disconnect();
             return false;
           }
-
         }
       }
     }
@@ -738,13 +737,10 @@ static bool GetBaselines()
 
   // Preparing for baseline shift
   vector<string> in_files;
-  for(in_files_tmp_it = in_files_tmp.begin();
-      in_files_tmp_it != in_files_tmp.end();
-      in_files_tmp_it++) {
-    if(in_files_tmp_it->find("baseline") != in_files_tmp_it->npos) {
-      in_files.push_back(*in_files_tmp_it);
-    }
-  }
+  for(vector<string>::iterator file = in_files_tmp.begin();
+      file != in_files_tmp.end(); file++)
+    if(file->find("baseline") != file->npos)
+      in_files.push_back(*file);
 
   sort(in_files.begin(), in_files.end());
 
