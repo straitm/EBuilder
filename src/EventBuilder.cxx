@@ -23,6 +23,14 @@ enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 // Just little convenience structs for reading from the database
 struct usb_sbop{
   int serial, board, offset, pmtboard_u;
+  usb_sbop(const int serial_, const int board_,
+           const int offset_, const int pmtboard_u_)
+  {
+    serial = serial_;
+    board = board_;
+    offset = offset_;
+    pmtboard_u = pmtboard_u_;
+  }
 };
 
 struct some_run_info{
@@ -873,12 +881,14 @@ static string cpp_sprintf(const char * format, ...)
 }
 
 // Return the name of the config table for this run.  Sets no globals.
-static char * get_config_table_name(mysqlpp::Connection & myconn)
+static char * get_config_table_name(mysqlpp::Connection * myconn)
 {
+  if(myconn == NULL) return NULL;
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT config_table FROM OV_runsummary "
     "WHERE Run_number = '%s' ORDER BY start_time DESC;", RunNumber.c_str());
-  const mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
+  const mysqlpp::StoreQueryResult res = myconn->query(query_string).store();
   if(res.num_rows() < 1)
     die_with_log("Found no matching entry for run %s in OV_runsummary\n",
       RunNumber.c_str());
@@ -899,56 +909,129 @@ static char * get_config_table_name(mysqlpp::Connection & myconn)
 // Return a list of distict USB serial numbers for the given config table.
 // If positiveHV is true, then require the HV column to be not -999, which
 // marks the USB as a Fan-In, whatever that is.  Sets no globals.
-static vector<int> get_distinct_usb_serials(mysqlpp::Connection & myconn,
+static vector<int> get_distinct_usb_serials(mysqlpp::Connection * myconn,
                                             const char * const config_table,
                                             const bool positiveHV)
 {
+  vector<int> serials;
+  if(myconn == NULL){
+    serials.push_back(5);
+    serials.push_back(15);
+    serials.push_back(16);
+    serials.push_back(17);
+    serials.push_back(18);
+    if(!positiveHV) serials.push_back(28); // the only fan-in
+    return serials;
+  }
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT DISTINCT USB_serial FROM %s %s ORDER BY USB_serial;",
     config_table, positiveHV?"WHERE HV != -999":"");
-  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::Query query = myconn->query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
   log_msg(LOG_INFO, "Found %u distinct %sUSBs in table %s\n",
           res.num_rows(), positiveHV?"non-Fan-in ":"", config_table);
-  vector<int> serials;
   for(unsigned int i = 0; i < res.num_rows(); i++)
     serials.push_back(res[i][0]);
   return serials;
 }
 
-// Return a vector of {serial numbers, board numbers, time offsets, pmtboard_u}
+// Return a vector of {USB serial numbers, board numbers, time offsets, pmtboard_u}
 // for all USBs in the given table.  Sets no globals.
-static vector<usb_sbop> get_sbops(mysqlpp::Connection & myconn,
+static vector<usb_sbop> get_sbops(mysqlpp::Connection * myconn,
                                   const char * const config_table)
 {
+  vector<usb_sbop> sbops;
+  if(myconn == NULL){
+    sbops.push_back(usb_sbop(15,0,200,0));
+    sbops.push_back(usb_sbop(15,2,202,0));
+    sbops.push_back(usb_sbop(15,3,203,0));
+    sbops.push_back(usb_sbop(15,4,204,0));
+    sbops.push_back(usb_sbop(15,5,205,0));
+    sbops.push_back(usb_sbop(15,6,206,0));
+    sbops.push_back(usb_sbop(15,7,207,0));
+    sbops.push_back(usb_sbop(15,8,208,0));
+    sbops.push_back(usb_sbop(15,9,209,0));
+    sbops.push_back(usb_sbop(15,10,210,0));
+    sbops.push_back(usb_sbop(16,11,211,0));
+    sbops.push_back(usb_sbop(16,12,212,0));
+    sbops.push_back(usb_sbop(16,13,213,0));
+    sbops.push_back(usb_sbop(16,14,214,0));
+    sbops.push_back(usb_sbop(16,15,215,0));
+    sbops.push_back(usb_sbop(16,16,216,0));
+    sbops.push_back(usb_sbop(16,17,217,0));
+    sbops.push_back(usb_sbop(16,18,218,0));
+    sbops.push_back(usb_sbop(16,19,219,0));
+    sbops.push_back(usb_sbop(16,20,220,0));
+    sbops.push_back(usb_sbop(5,21,221,0));
+    sbops.push_back(usb_sbop(5,22,222,0));
+    sbops.push_back(usb_sbop(5,23,223,0));
+    sbops.push_back(usb_sbop(5,24,224,0));
+    sbops.push_back(usb_sbop(5,25,225,0));
+    sbops.push_back(usb_sbop(5,26,226,0));
+    sbops.push_back(usb_sbop(5,27,227,0));
+    sbops.push_back(usb_sbop(5,28,228,0));
+    sbops.push_back(usb_sbop(5,29,229,0));
+    sbops.push_back(usb_sbop(5,30,230,0));
+    sbops.push_back(usb_sbop(17,31,231,0));
+    sbops.push_back(usb_sbop(17,32,232,0));
+    sbops.push_back(usb_sbop(17,33,233,0));
+    sbops.push_back(usb_sbop(17,34,234,0));
+    sbops.push_back(usb_sbop(17,35,235,0));
+    sbops.push_back(usb_sbop(17,36,236,0));
+    sbops.push_back(usb_sbop(17,37,237,0));
+    sbops.push_back(usb_sbop(17,38,238,0));
+    sbops.push_back(usb_sbop(17,39,239,0));
+    sbops.push_back(usb_sbop(17,40,240,0));
+    sbops.push_back(usb_sbop(18,41,241,0));
+    sbops.push_back(usb_sbop(18,42,242,0));
+    sbops.push_back(usb_sbop(18,43,243,0));
+    sbops.push_back(usb_sbop(18,44,244,0));
+    sbops.push_back(usb_sbop(18,45,245,0));
+    sbops.push_back(usb_sbop(18,46,246,0));
+    sbops.push_back(usb_sbop(18,47,247,0));
+    sbops.push_back(usb_sbop(18,48,248,0));
+    sbops.push_back(usb_sbop(18,49,249,0));
+    sbops.push_back(usb_sbop(18,50,250,0));
+    sbops.push_back(usb_sbop(18,51,251,0));
+    sbops.push_back(usb_sbop(18,52,252,0));
+    sbops.push_back(usb_sbop(18,53,253,0));
+    sbops.push_back(usb_sbop(18,54,254,0));
+    sbops.push_back(usb_sbop(18,55,255,0));
+    sbops.push_back(usb_sbop(18,56,256,0));
+    sbops.push_back(usb_sbop(28,58,258,0));
+    sbops.push_back(usb_sbop(28,59,259,0));
+    sbops.push_back(usb_sbop(28,60,260,0));
+    sbops.push_back(usb_sbop(28,61,261,0));
+    return sbops;
+  }
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT USB_serial, board_number, offset, pmtboard_u FROM %s;",
     config_table);
-  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::Query query = myconn->query(query_string);
   mysqlpp::StoreQueryResult res=query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
   log_msg(LOG_INFO, "Found time offsets for online table %s\n", config_table);
 
-  vector<usb_sbop> sbops;
-  for(unsigned int i = 0; i < res.num_rows(); i++){
-    usb_sbop s;
-    s.serial = atoi(res[i][0]);
-    s.board  = atoi(res[i][1]);
-    s.offset = atoi(res[i][2]);
-    s.pmtboard_u = atoi(res[i][3]);
-  }
+  for(unsigned int i = 0; i < res.num_rows(); i++)
+    sbops.push_back(usb_sbop(atoi(res[i][0]), atoi(res[i][1]),
+                             atoi(res[i][2]), atoi(res[i][3])));
   return sbops;
 }
 
-static std::pair<int, int> board_count(mysqlpp::Connection & myconn,
+static std::pair<int, int> board_count(mysqlpp::Connection * myconn,
                                        const char * const config_table)
 {
+  if(myconn == NULL)
+    return std::pair<int, int>(60, 261); // from online400_no_ts7
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT DISTINCT pmtboard_u FROM %s;", config_table);
-  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::Query query = myconn->query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
@@ -967,14 +1050,24 @@ static std::pair<int, int> board_count(mysqlpp::Connection & myconn,
 
 // Gets the necessary run info from the run summary table, does some checking,
 // and returns the values that will be used to set globals.  No globals set here.
-static some_run_info get_some_run_info(mysqlpp::Connection & myconn)
+static some_run_info get_some_run_info(mysqlpp::Connection * myconn)
 {
+  if(myconn == NULL){
+    some_run_info info;
+    memset(&info, 0, sizeof(some_run_info));
+    info.has_ebcomment = false;
+    info.has_ebsubrun = false;
+    info.has_stoptime = true;
+    info.daqdisk = 2;
+    return info;
+  }
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT Run_Type,SW_Threshold,"
     "SW_TriggerMode,daq_disk,EBcomment,EBsubrunnumber,stop_time"
     "FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
     RunNumber.c_str());
-  mysqlpp::Query query = myconn.query(query_string);
+  mysqlpp::Query query = myconn->query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
@@ -1032,36 +1125,44 @@ static some_run_info get_some_run_info(mysqlpp::Connection & myconn)
 }
 
 // Returns the number of times the run has been processed before
-static unsigned int get_ntimesprocessed(mysqlpp::Connection & myconn)
+static unsigned int get_ntimesprocessed(mysqlpp::Connection * myconn)
 {
+  if(myconn == NULL) return 0;
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
           RunNumber.c_str());
-  mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
+  mysqlpp::StoreQueryResult res = myconn->query(query_string).store();
   return res.num_rows();
 }
 
 // Returns the directory where this run was processed the first time in this
 // configuration, or the empty string if it never has been
-static string get_same_config_path(mysqlpp::Connection & myconn)
+static string get_same_config_path(mysqlpp::Connection * myconn)
 {
+  if(myconn == NULL) return "";
+
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT Path FROM OV_ebuilder "
     "WHERE Run_number = '%s' and SW_Threshold = '%04d' and "
     "SW_TriggerMode = '%01d' and Res1 = '00' and Res2 = '00' "
     "ORDER BY Entry;", RunNumber.c_str(), Threshold, (int)EBTrigMode);
 
-  mysqlpp::StoreQueryResult res = myconn.query(query_string).store();
+  mysqlpp::StoreQueryResult res = myconn->query(query_string).store();
 
   if(res.num_rows() == 0) return "";
   else return (string)res[0][0];
 }
 
-// Database tables read from: OV_runsummary; whatever table OV_runsummary names
-// in config_table, such as online400; and OV_ebuilder.
-static void read_summary_table()
+// Connects to the database and return a pointer to it.  Or, XXX, actually at
+// the moment does not because I don't have one and am not yet sure if I want
+// one, so return NULL to indicate that we don't have one.
+static mysqlpp::Connection * establish_mysql_connection_or_not()
 {
-  mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
+  return NULL;
+
+  // false to not throw exceptions on errors
+  mysqlpp::Connection * myconn = new mysqlpp::Connection(false);
 
   char DCDatabase_path[BUFSIZE];
 
@@ -1073,9 +1174,17 @@ static void read_summary_table()
   sprintf(password, "%s", config_string(DCDatabase_path, "DCDB_OV_PASSWORD"));
   sprintf(database, "%s", config_string(DCDatabase_path, "DCDB_OV_DBNAME"));
 
-  if(!myconn.connect(database, server, username, password))
+  if(!myconn->connect(database, server, username, password))
     die_with_log("Cannot connect to MySQL database %s at %s\n",
       database, server);
+  return myconn;
+}
+
+// Database tables read from: OV_runsummary; whatever table OV_runsummary names
+// in config_table, such as online400; and OV_ebuilder.
+static void read_summary_table()
+{
+  mysqlpp::Connection * myconn = establish_mysql_connection_or_not();
 
   const char * const config_table = get_config_table_name(myconn);
 
@@ -1197,7 +1306,7 @@ static void read_summary_table()
     }
 
     const string same_config_path = get_same_config_path(myconn);
-    myconn.disconnect();
+    if(myconn != NULL) myconn->disconnect();
 
     // Run has already been reprocessed with same configuration
     if(same_config_path != "") {
