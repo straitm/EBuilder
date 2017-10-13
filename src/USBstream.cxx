@@ -498,11 +498,7 @@ bool USBstream::check_debug(unsigned long int d)
     }
     return true;
   }
-  else if(a == 0xc1) {
-    flush_extra();
-    return true;
-  }
-  else if(a == 0xc2) {
+  else if(a == 0xc1 || a == 0xc2) {
     flush_extra();
     return true;
   }
