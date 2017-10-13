@@ -79,8 +79,8 @@ static char password[BUFSIZE] = {0};
 static char database[BUFSIZE] = {0};
 
 // Set in read_summary_table() from database information and used throughout
-static int numUSB = 0;
-static int num_nonFanUSB = 0;
+static unsigned int numUSB = 0;
+static unsigned int num_nonFanUSB = 0;
 static map<int, int> Datamap; // Maps numerical ordering of non-Fan-in
                              // USBs to all numerical ordering of all USBs
 static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
@@ -146,12 +146,12 @@ static void *handle(void *ptr) // This defines a thread to decode files
 
 static void *joiner(void *ptr) // This thread joins the above threads
 {
-  long int nusb = (long int) ptr;
-  if((int)nusb < numUSB)
-    for(int n=0; n<(int)nusb; n++)
+  unsigned long int nusb = (unsigned long int)ptr;
+  if(nusb < numUSB)
+    for(unsigned int n = 0; n < nusb; n++)
       gThreads[Datamap[n]]->Join();
   else
-    for(int n=0; n<numUSB; n++)
+    for(unsigned int n = 0; n < numUSB; n++)
       gThreads[n]->Join();
   finished = true;
   return NULL;
@@ -294,13 +294,13 @@ static int LoadAll()
 
   if(EBRunMode != kReprocess) {
     // FixME: Is 2*numUSB sufficient to guarantee a match?
-    if((int)files.size() <= 3*numUSB) {
+    if(files.size() <= 3*numUSB) {
       files.clear();
       if(GetDir(BinaryDir, files))
         return 0;
     }
   }
-  if((int)files.size() < numUSB)
+  if(files.size() < numUSB)
     return 0;
 
   sort(files.begin(), files.end()); // FixME: Is it safe to avoid this every time?
@@ -320,7 +320,7 @@ static int LoadAll()
   fname_it_delim = fname_begin->find(fdelim);
   string temp3;
   string fusb;
-  for(int k = 0; k<numUSB; k++) {
+  for(unsigned int k = 0; k<numUSB; k++) {
     for(int j = k; j<(int)files.size(); j++) {
       fusb = (files[j]).substr(fname_it_delim+1, (files[j]).npos);
       if(strtol(fusb.c_str(), NULL, 10) == OVUSBStream[k].GetUSB()) {
@@ -342,7 +342,7 @@ static int LoadAll()
 
   int status = 0;
   string base_filename;
-  for(int k=0; k<numUSB; k++) {
+  for(unsigned int k=0; k<numUSB; k++) {
     fname_it_delim = fname_begin->find(fdelim);
     ftime_min = fname_begin->substr(0, fname_it_delim);
     fusb = fname_begin->substr(fname_it_delim+1, fname_begin->npos);
@@ -727,8 +727,8 @@ static bool GetBaselines()
   vector<string> in_files_tmp;
   if(GetDir(BinaryDir, in_files_tmp, false, true)) { // Get baselines too
     if(errno)
-      log_msg(LOG_ERR, "Fatal Error(%d) opening binary "
-        "directory %s for baselines\n", errno, BinaryDir.c_str());
+      log_msg(LOG_ERR, "Fatal Error (%s) opening binary "
+        "directory %s for baselines\n", "" /*strerror(errno)*/, BinaryDir.c_str());
     return false;
   }
   else {
@@ -736,24 +736,24 @@ static bool GetBaselines()
   }
 
   // Preparing for baseline shift
-  vector<string> in_files;
+  vector<string> baseline_files;
   for(vector<string>::iterator file = in_files_tmp.begin();
       file != in_files_tmp.end(); file++)
-    if(file->find("baseline") != file->npos)
-      in_files.push_back(*file);
+    if(file->find("baseline") != string::npos)
+      baseline_files.push_back(*file);
 
-  sort(in_files.begin(), in_files.end());
+  sort(baseline_files.begin(), baseline_files.end());
 
   // Sanity check on number of baseline files
-  if((int)in_files.size() != num_nonFanUSB) {
+  if(baseline_files.size() != num_nonFanUSB) {
     log_msg(LOG_ERR, "Fatal Error: Baseline file count (%lu) != "
-      "numUSB (%d) in directory %s\n", (long int)in_files.size(), numUSB,
+      "numUSB (%u) in directory %s\n", (long int)baseline_files.size(), numUSB,
        BinaryDir.c_str());
     return false;
   }
 
   // Set USB numbers for each OVUSBStream and load baseline files
-  for(int i = 0; i < num_nonFanUSB; i++) {
+  for(unsigned int i = 0; i < num_nonFanUSB; i++) {
     // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
       log_msg(LOG_ERR, "Fatal Error: Found USB number "
@@ -765,7 +765,7 @@ static bool GetBaselines()
   }
 
   // Decode all files at once and load into memory
-  for(int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
+  for(unsigned int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n", Datamap[j]);
     gThreads[Datamap[j]] =
       new TThread(Form("gThreads%d", Datamap[j]), handle, (void*) Datamap[j]);
@@ -783,7 +783,7 @@ static bool GetBaselines()
 
   joinerThread->Join();
 
-  for(int k=0; k < num_nonFanUSB; k++) delete gThreads[Datamap[k]];
+  for(unsigned int k=0; k < num_nonFanUSB; k++) delete gThreads[Datamap[k]];
   delete joinerThread;
 
   cout << "Joined all threads!\n";
@@ -797,7 +797,7 @@ static bool GetBaselines()
       *(*(baselines+i)+j) = 0;
   }
 
-  for(int i = 0; i < num_nonFanUSB; i++) {
+  for(unsigned int i = 0; i < num_nonFanUSB; i++) {
     DataVector BaselineData;
     OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
     CalculatePedestal(&BaselineData, baselines);
@@ -1390,7 +1390,7 @@ static void read_summary_table()
 
     vector<string> files_to_rename;
     if(EBRunMode == kRecovery) {
-      for(int j = 0; j < numUSB; j++) {
+      for(unsigned int j = 0; j < numUSB; j++) {
         const int mysize = myfiles[j].size();
         const int avgsize = initial_files.size()/numUSB;
         if(mysize > 0)
@@ -1560,7 +1560,7 @@ int main(int argc, char **argv)
   }
 
   // Set Thresholds. Only for data streams
-  for(int i = 0; i < num_nonFanUSB; i++)
+  for(unsigned int i = 0; i < num_nonFanUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
 
   // Locate existing binary data and create output folder
@@ -1580,7 +1580,7 @@ int main(int argc, char **argv)
   // This is the main Event Builder loop
   while(true) {
 
-    for(int i=0; i < numUSB; i++) {
+    for(unsigned int i=0; i < numUSB; i++) {
 
       DataVector *DataVectorPtr = &(CurrentDataVector[i]);
 
@@ -1613,7 +1613,7 @@ int main(int argc, char **argv)
           sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
         }
 
-        for(int j=0; j<numUSB; j++) { // Load all files in at once
+        for(unsigned int j=0; j<numUSB; j++) { // Load all files in at once
           printf("Starting Thread %d\n", j);
           gThreads[j] = new TThread(Form("gThreads%d", j), handle, (void*) j);
           gThreads[j]->Run();
@@ -1628,7 +1628,7 @@ int main(int argc, char **argv)
 
         joinerThread->Join();
 
-        for(int k=0; k<numUSB; k++)
+        for(unsigned int k=0; k<numUSB; k++)
           if(gThreads[k])
             delete gThreads[k];
         if(joinerThread) delete joinerThread;
@@ -1636,7 +1636,7 @@ int main(int argc, char **argv)
         cout << "Joined all threads!\n";
 
         // Rename files
-        for(int i = 0; i<numUSB; i++) {
+        for(unsigned int i = 0; i<numUSB; i++) {
           string tempfilename = OVUSBStream[i].GetFileName();
           size_t mypos = tempfilename.find("binary");
           if(mypos != tempfilename.npos)
@@ -1675,7 +1675,7 @@ int main(int argc, char **argv)
 
     // index of minimum event added to USB stream
     int MinIndex=0;
-    for(int i=0; i < numUSB; i++) {
+    for(unsigned int i=0; i < numUSB; i++) {
       CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
       if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) MinIndex = i;
     }
@@ -1688,7 +1688,7 @@ int main(int argc, char **argv)
       MinIndex=0; // Reset minimum to first USB stream
       MinDataPacket = *(CurrentDataVectorIt[MinIndex]);
 
-      for(int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
+      for(unsigned int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
 
         vector<int> CurrentDataPacket = *(CurrentDataVectorIt[k]);
 
@@ -1719,7 +1719,7 @@ int main(int argc, char **argv)
     } // End of while loop: Events have been built for this time stamp
 
     // Clean up operations and store data for later
-    for(int k=0; k<numUSB; k++)
+    for(unsigned int k=0; k<numUSB; k++)
       CurrentDataVector[k].assign(CurrentDataVectorIt[k], CurrentDataVector[k].end());
     ExtraDataVector.assign(MinDataVector.begin(), MinDataVector.end());
     ExtraIndexVector.assign(MinIndexVector.begin(), MinIndexVector.end());
