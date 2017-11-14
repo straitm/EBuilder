@@ -617,8 +617,6 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
 {
   double baseline[maxModules][numChannels] = {};
   int counter[maxModules][numChannels] = {};
-  int channel, charge, module, type;
-  channel = charge = module = 0;
 
   for(DataVector::iterator BaselineDataIt = BaselineData->begin();
       BaselineDataIt != BaselineData->end();
@@ -628,29 +626,31 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
     if(BaselineDataIt->size() < 8 && BaselineDataIt->size() % 2 != 1)
       log_msg(LOG_ERR, "Fatal Error: Baseline data packet found with no data\n");
 
-    module = (BaselineDataIt->at(0) >> 8) & 0x7f;
-    type = BaselineDataIt->at(0) >> 15;
+    const int module = (BaselineDataIt->at(0) >> 8) & 0x7f;
+    const int type = BaselineDataIt->at(0) >> 15;
 
-    if(type) {
-      if(module > maxModules)
-        log_msg(LOG_ERR, "Fatal Error: Module number requested "
-          "(%d) out of range in calculate pedestal\n", module);
+    if(!type) continue;
 
-      for(int i = 7; i+1 < (int)BaselineDataIt->size(); i=i+2) {
-        charge = BaselineDataIt->at(i);
-        channel = BaselineDataIt->at(i+1); // Channels run 0-63
-        if(channel >= numChannels){
-          log_msg(LOG_CRIT, "Fatal Error: Channel number requested "
-            "(%d) out of range (0-%d) in calculate pedestal\n",
-            channel, numChannels-1);
-          exit(1);
-        }
-        // Should these be modified to better handle large numbers of baseline
-        // triggers?
-        baseline[module][channel] = (baseline[module][channel]*
-          counter[module][channel] + charge)/(counter[module][channel]+1);
-        counter[module][channel] = counter[module][channel] + 1;
+    if(module > maxModules){
+      log_msg(LOG_CRIT, "Fatal Error: Module number requested "
+        "(%d) out of range (0-%d) in calculate pedestal\n", module, maxModules);
+      exit(1);
+    }
+
+    for(int i = 7; i+1 < (int)BaselineDataIt->size(); i=i+2) {
+      const int charge = BaselineDataIt->at(i);
+      const int channel = BaselineDataIt->at(i+1); // Channels run 0-63
+      if(channel >= numChannels){
+        log_msg(LOG_CRIT, "Fatal Error: Channel number requested "
+          "(%d) out of range (0-%d) in calculate pedestal\n",
+          channel, numChannels-1);
+        exit(1);
       }
+      // Should these be modified to better handle large numbers of baseline
+      // triggers?
+      baseline[module][channel] = (baseline[module][channel]*
+        counter[module][channel] + charge)/(counter[module][channel]+1);
+      counter[module][channel] = counter[module][channel] + 1;
     }
   }
 
