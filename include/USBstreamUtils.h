@@ -25,9 +25,8 @@ void start_log();
 // Also exclude files with names containing "baseline" or "processed" unless
 // 'allow_bl_and_pc' is true.
 //
-// Return true if no files are found that satisfy those rules.
-//
-// Returns false if it found files or if the directory couldn't be read.  [sic]
+// Return true if no files are found that satisfy those rules, including if
+// the directory couldn't be read.  Otherwise, returns false.
 bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
             const bool allowdots = false, const bool allow_bl_and_pc = false);
 

@@ -90,7 +90,7 @@ bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
   DIR *dp;
   struct dirent *dirp;
 
-  if((dp = opendir(dir.c_str())) == NULL) return false; // really?
+  if((dp = opendir(dir.c_str())) == NULL) return true;
 
   while((dirp = readdir(dp)) != NULL){
     const std::string myfname = std::string(dirp->d_name);
@@ -111,7 +111,7 @@ bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
     myfiles.push_back(myfname);
   }
 
-  if(closedir(dp) < 0) return false;
+  if(closedir(dp) < 0) return true;
 
   return myfiles.size()==0;
 }
