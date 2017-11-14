@@ -639,9 +639,12 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
       for(int i = 7; i+1 < (int)BaselineDataIt->size(); i=i+2) {
         charge = BaselineDataIt->at(i);
         channel = BaselineDataIt->at(i+1); // Channels run 0-63
-        if(channel >= numChannels)
-          log_msg(LOG_ERR, "Fatal Error: Channel number requested "
-            "(%d) out of range in calculate pedestal\n", channel);
+        if(channel >= numChannels){
+          log_msg(LOG_CRIT, "Fatal Error: Channel number requested "
+            "(%d) out of range (0-%d) in calculate pedestal\n",
+            channel, numChannels-1);
+          exit(1);
+        }
         // Should these be modified to better handle large numbers of baseline
         // triggers?
         baseline[module][channel] = (baseline[module][channel]*
@@ -912,12 +915,11 @@ static vector<int> get_distinct_usb_serials(mysqlpp::Connection * myconn,
 {
   vector<int> serials;
   if(myconn == NULL){
-    serials.push_back(5);
-    serials.push_back(15);
-    serials.push_back(16);
-    serials.push_back(17);
-    serials.push_back(18);
-    if(!positiveHV) serials.push_back(28); // the only fan-in
+    serials.push_back(6);
+    serials.push_back(21);
+    serials.push_back(24);
+    serials.push_back(25);
+    serials.push_back(29);
     return serials;
   }
 
