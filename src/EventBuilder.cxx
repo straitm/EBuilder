@@ -1592,21 +1592,20 @@ int main(int argc, char **argv)
             return 127;
           }
           cout << "Files are not ready...\n";
-          if((int)difftime(time(0), timeout) > ENDTIME) {
-            if(read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME) {
-              while(!write_endofrun_block(fname, dataFile)) sleep(1);
+          if((int)difftime(time(0), timeout) > ENDTIME &&
+             (read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME)) {
+            while(!write_endofrun_block(fname, dataFile)) sleep(1);
 
-              if((int)difftime(time(0), timeout) > MAXTIME)
-                log_msg(LOG_ERR, "No data found for %d seconds!  "
-                    "Closing run %s without finding stop time on MySQL\n",
-                    MAXTIME, RunNumber.c_str());
-              else
-                log_msg(LOG_INFO, "Event Builder has finished processing run %s\n",
-                  RunNumber.c_str());
+            if((int)difftime(time(0), timeout) > MAXTIME)
+              log_msg(LOG_ERR, "No data found for %d seconds!  "
+                  "Closing run %s without finding stop time on MySQL\n",
+                  MAXTIME, RunNumber.c_str());
+            else
+              log_msg(LOG_INFO, "Event Builder has finished processing run %s\n",
+                RunNumber.c_str());
 
-              write_ebretval(1);
-              return 0;
-            }
+            write_ebretval(1);
+            return 0;
           }
           sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
         }
