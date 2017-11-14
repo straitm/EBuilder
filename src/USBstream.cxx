@@ -137,7 +137,7 @@ bool USBstream::GetNextTimeStamp(DataVector *vec)
   myit++;
 
   log_msg(LOG_INFO, "Number of muon events found in usb stream %d: %ld (%ld) (%f)\n",
-         myusb,mucounter,spycounter,avglength);
+         myusb, mucounter, spycounter, avglength);
   mucounter = 0;
   spycounter = 0;
   avglength = 0;
@@ -149,12 +149,12 @@ int USBstream::LoadFile(const std::string nextfile)
 {
   if(IsOpen) return 1;
 
-  sprintf(myfilename, "%s_%d",nextfile.c_str(), GetUSB());
+  sprintf(myfilename, "%s_%d", nextfile.c_str(), myusb);
   myFile = new std::fstream(myfilename, std::fstream::in | std::fstream::binary);
 
   if(!myFile->is_open()) {
     delete myFile;
-    log_msg(LOG_INFO, "Waiting for files...\n");
+    log_msg(LOG_INFO, "Waiting for %s to appear...\n", myfilename);
     return 0;
   }
 
@@ -184,7 +184,7 @@ bool USBstream::decode()
   if(myit == myvec.end())
     myvec.clear();
   else if(myit < myvec.end())
-    myvec.assign(myit,myvec.end());
+    myvec.assign(myit, myvec.end());
 
   Reset();
 
@@ -229,7 +229,7 @@ bool USBstream::decode()
           }
         }
         else {
-          log_msg(LOG_ERR,"Found corrupted data in file %s\n",myfilename);
+          log_msg(LOG_ERR, "Found corrupted data in file %s\n", myfilename);
           exp = 0;
         }
       }
@@ -390,7 +390,7 @@ void USBstream::check_data()
               DataVector::iterator InsertionSortIt = myvec.end();
               bool found = false;
               while(--InsertionSortIt >= myvec.begin()) {
-                if(!LessThan(*packet,*InsertionSortIt, 0)) {
+                if(!LessThan(*packet, *InsertionSortIt, 0)) {
                   // Due to edge strip trigger logic in the trigger box firmware,
                   // we find duplicate trigger box packets of the form:
                   // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000
@@ -403,7 +403,7 @@ void USBstream::check_data()
                   if(IsFanUSB &&
                      // packets should be separated by no more than 3 clock cycles
                      // XXX Is this desirable for ProtoDUNE-SP CRT?
-                     !LessThan(*InsertionSortIt,*packet,3) &&
+                     !LessThan(*InsertionSortIt, *packet, 3) &&
                      // packets should come from the same module
                      ((packet->at(0) >> 8) & 0x7f) ==
                      ((InsertionSortIt->at(0) >> 8) & 0x7f)) {
@@ -413,23 +413,23 @@ void USBstream::check_data()
                     found = true;
                     break;
                   }
-                  myvec.insert(InsertionSortIt+1,*packet);
+                  myvec.insert(InsertionSortIt+1, *packet);
                   found = true;
                   break;
                 }
               }
               if(!found) // Reached beginning of myvec
-                myvec.insert(myvec.begin(),*packet);
+                myvec.insert(myvec.begin(), *packet);
             }
             else {
               myvec.push_back(*packet);
             }
           }
           //delete first few elements of data
-          data.erase(data.begin(),data.begin()+len+1); //(no longer)
+          data.erase(data.begin(), data.begin()+len+1); //(no longer)
         }
         else {
-          log_msg(LOG_ERR,"Found packet parity mismatch in USB stream %d",myusb);
+          log_msg(LOG_ERR, "Found packet parity mismatch in USB stream %d", myusb);
         }
         delete packet;
       }
@@ -513,6 +513,6 @@ void USBstream::flush_extra()
 
     // Ignore incomplete packets at the beginning of the run
     if(!first_packet && mytolutc)
-      log_msg(LOG_NOTICE, "Found x packet in file %s\n",myfilename);
+      log_msg(LOG_NOTICE, "Found x packet in file %s\n", myfilename);
   }
 }
