@@ -311,20 +311,17 @@ static int LoadAll()
 
   string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx
   size_t fname_it_delim;
-  string ftime_min;
   if(fname_begin->find(fdelim) == fname_begin->npos) {
     log_msg(LOG_CRIT, "Fatal Error: Cannot find '_' in input file name\n");
     return -1;
   }
 
   fname_it_delim = fname_begin->find(fdelim);
-  string temp3;
-  string fusb;
   for(unsigned int k = 0; k<numUSB; k++) {
     for(int j = k; j<(int)files.size(); j++) {
-      fusb = (files[j]).substr(fname_it_delim+1, (files[j]).npos);
+      const string fusb = (files[j]).substr(fname_it_delim+1, (files[j]).npos);
       if(strtol(fusb.c_str(), NULL, 10) == OVUSBStream[k].GetUSB()) {
-        temp3 = files[j];
+        const string temp3 = files[j];
         files[j] = files[k];
         files[k] = temp3;
         break;
@@ -344,8 +341,8 @@ static int LoadAll()
   string base_filename;
   for(unsigned int k=0; k<numUSB; k++) {
     fname_it_delim = fname_begin->find(fdelim);
-    ftime_min = fname_begin->substr(0, fname_it_delim);
-    fusb = fname_begin->substr(fname_it_delim+1, fname_begin->npos);
+    const string ftime_min = fname_begin->substr(0, fname_it_delim);
+    const string fusb = fname_begin->substr(fname_it_delim+1, fname_begin->npos);
     // Error: All usbs should have been assigned by MySQL
     if(OVUSBStream[k].GetUSB() == -1) {
       log_msg(LOG_CRIT, "Fatal Error: USB number unassigned\n");
@@ -637,7 +634,7 @@ static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
       exit(1);
     }
 
-    for(int i = 7; i+1 < (int)BaselineDataIt->size(); i=i+2) {
+    for(int i = 7; i+1 < (int)BaselineDataIt->size(); i += 2) {
       const int charge = BaselineDataIt->at(i);
       const int channel = BaselineDataIt->at(i+1); // Channels run 0-63
       if(channel >= numChannels){
