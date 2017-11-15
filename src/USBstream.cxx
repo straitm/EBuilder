@@ -598,7 +598,7 @@ void USBstream::flush_extra()
     extra = false;
     if(!first_packet && mytolutc) { // Ignore incomplete packets at the beginning of the run
       //gaibu_msg(MNOTICE,gaibu_debug_msg);
-      printf("Found x packet in file %s\n",myfilename);
+      printf("Found extra packet (?) in file %s\n",myfilename);
     }    
   }
 }

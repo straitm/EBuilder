@@ -69,7 +69,7 @@ static int Threshold = 73; //default 1.5 PE threshold
 static string RunNumber = "";
 static string OVRunType = "P";
 static string OVDAQHost = "dcfovdaq";
-static int OutDisk=1; // default output location of OV Ebuilder: /data1
+static string OutBaseDir = "."; // output directory
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
 // Set in read_summary_table() just to get the other stuff
@@ -158,15 +158,17 @@ static void *joiner(void *ptr) // This thread joins the above threads
 }
 
 // opens output data file
-static int open_file(string name)
+static int open_file(const string name)
 {
-  int temp_dataFile = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
-  if ( temp_dataFile < 0 ) {
-    log_msg(LOG_CRIT, "Fatal Error: failed to open file %s\n", name.c_str());
+  errno = 0;
+  const int fd = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
+  if(fd < 0){
+    log_msg(LOG_CRIT, "Fatal Error: failed to open file %s: %s\n",
+            name.c_str(), strerror(errno));
     write_ebretval(-1);
     exit(1);
   }
-  return temp_dataFile;
+  return fd;
 }
 
 static int check_disk_space(string dir)
@@ -568,7 +570,7 @@ static bool parse_options(int argc, char **argv)
 
     case 't': Threshold = atoi(optarg); break;
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
-    case 'e': OutDisk = atoi(optarg); break;
+    case 'e': strcpy(buf, optarg); OutBaseDir = buf; break;
     case 'h':
     default:  goto fail;
     }
@@ -606,7 +608,7 @@ static bool parse_options(int argc, char **argv)
          "-R : OV run type (P: physics, C: calib, D: debug)\n"
          "     [default: P]\n"
          "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
-         "-e : disk number of OV EBuilder output binary [default: 1]\n",
+         "-e : Base output directory, default .\n",
          argv[0]);
   return false;
 }
@@ -1244,7 +1246,7 @@ static void read_summary_table()
   const some_run_info runinfo = get_some_run_info(myconn);
 
   // Set the Data Folder and Ouput Dir
-  const string OutputDir = cpp_sprintf("/data%d/OVDAQ/", OutDisk);
+  const string OutputDir = OutBaseDir + "/";
   OutputFolder = OutputDir + "DATA/";
 
   // Assign output folder based on disk number
@@ -1425,8 +1427,10 @@ static void read_summary_table()
         fname.replace(pos, sizeof(".done")-1, "");
       }
 
+      errno = 0;
       while(rename(files_to_rename[i].c_str(), fname.c_str())) {
-        log_msg(LOG_ERR, "Could not rename decoded data file.\n");
+        log_msg(LOG_ERR, "Could not rename decoded data file: %s\n",
+                strerror(errno));
         sleep(1);
       }
     }
@@ -1537,7 +1541,7 @@ int main(int argc, char **argv)
   vector<int> MinDataPacket; // Minimum and Last Data Packets added
   vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int dataFile = 0; // output file descriptor
-  string fname; // output file name
+  string fname = "ebuilder.out"; // output file name
   int EventCounter = 0;
 
   start_log(); // establish syslog connection
@@ -1643,8 +1647,11 @@ int main(int argc, char **argv)
             tempfilename.replace(mypos, 6, "decoded");
           tempfilename += ".done";
 
+          errno = 0;
           while(rename(OVUSBStream[i].GetFileName(), tempfilename.c_str())) {
-            log_msg(LOG_ERR, "Could not rename binary data file.\n");
+            log_msg(LOG_ERR, "Could not rename binary data file %s to %s: %s.\n",
+                    OVUSBStream[i].GetFileName(), tempfilename.c_str(),
+                    strerror(errno));
             sleep(1);
           }
         }
