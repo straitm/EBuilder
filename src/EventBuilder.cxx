@@ -240,7 +240,8 @@ static bool LoadRun()
   files.clear();
   if(GetDir(BinaryDir, files)) {
     if(errno) {
-      log_msg(LOG_CRIT, "Error(%d) opening dir %s\n", errno, BinaryDir.c_str());
+      log_msg(LOG_CRIT, "Error (%s) opening directory %s\n", strerror(errno),
+              BinaryDir.c_str());
       write_ebretval(-1);
       exit(1);
     }
@@ -1258,7 +1259,8 @@ static void read_summary_table()
     // False if non-baseline files are found
     if(GetDir(BinaryDir, initial_files)) {
       if(errno)
-        die_with_log("Error(%d) opening directory %s\n", errno, BinaryDir.c_str());
+        die_with_log("Error (%s) opening directory %s\n", strerror(errno),
+                     BinaryDir.c_str());
       if(runinfo.has_stoptime){ // stop_time has been filled and so was a successful run
         EBRunMode = kReprocess;
       }
@@ -1316,8 +1318,8 @@ static void read_summary_table()
       string tempdir = same_config_path + "Run_" + RunNumber + "/processed";
       if(GetDir(tempdir, old_files, true))
         if(errno)
-          die_with_log("Error(%d) opening directory %s\n",
-                  errno, tempdir.c_str());
+          die_with_log("Error (%s) opening directory %s\n",
+                  strerror(errno), tempdir.c_str());
 
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
@@ -1331,7 +1333,8 @@ static void read_summary_table()
       tempdir = same_config_path + "Run_" + RunNumber;
       if(GetDir(tempdir, old_files, true))
         if(errno)
-          die_with_log("Error(%d) opening directory %s\n", errno, tempdir.c_str());
+          die_with_log("Error (%s) opening directory %s\n", strerror(errno),
+                       tempdir.c_str());
 
       for(int m = 0; m<(int)old_files.size(); m++) {
         tempfile = tempdir + "/" + old_files[m];
@@ -1362,8 +1365,8 @@ static void read_summary_table()
     initial_files.clear();
     if(GetDir(decoded_dir, initial_files, true)) {
       if(errno)
-        die_with_log("Error (%d) opening directory %s\n",
-                errno, decoded_dir.c_str());
+        die_with_log("Error (%s) opening directory %s\n", strerror(errno),
+                     decoded_dir.c_str());
       die_with_log("No decoded files found in directory %s\n",
         decoded_dir.c_str());
     }

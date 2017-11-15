@@ -90,6 +90,7 @@ bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
   DIR *dp;
   struct dirent *dirp;
 
+  errno = 0;
   if((dp = opendir(dir.c_str())) == NULL) return true;
 
   while((dirp = readdir(dp)) != NULL){
