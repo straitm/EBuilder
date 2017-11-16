@@ -1439,6 +1439,8 @@ static void read_summary_table()
 
 static bool write_summary_table(long int lasttime, int subrun)
 {
+  return true; // XXX skip database interaction
+
   mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
   mysqlpp::StoreQueryResult res;
 
