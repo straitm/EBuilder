@@ -129,15 +129,6 @@ bool USBstream::GetNextTimeStamp(DataVector *vec) {
 
     vec->push_back(*myit);
 
-    // Begin Diagnostics
-    //if( (*myit).size() ) {
-    if( ( ((*myit)[0] >> 8) & 0x7f) % 10 == 2 ) {
-      if( ( ((*myit)[0] >> 8) & 0x7f) % 20 != 12  || (myusb != 18 && myusb != 19) ) {
-      }
-    }
-      //}
-    // End Diagnostics
-
     if((*myit).size()>4) { // Look for next time stamp and break
       tmp = (*myit)[1] << 8;
       if(tmp + (*myit)[2] > ((mytolutc >> 16) & 65535)) {
@@ -154,7 +145,6 @@ bool USBstream::GetNextTimeStamp(DataVector *vec) {
   }
   tmp = ((*myit)[1] << 8) + (*myit)[2];
   mytolutc = (tmp << 16) + ((*myit)[3] << 8) + (*myit)[4];
-  //mytolutc = ( ((*myit)[1] << 24) + ((*myit)[2] << 16) + ((*myit)[3] << 8) + (*myit)[4] );
   myit++;
 
   return true;
