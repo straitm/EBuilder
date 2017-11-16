@@ -788,7 +788,7 @@ static bool GetBaselines()
   for(unsigned int k=0; k < num_nonFanUSB; k++) delete gThreads[Datamap[k]];
   delete joinerThread;
 
-  cout << "Joined all threads!\n";
+  cout << "Joined all baseline threads!\n";
 
   // Build baseline tables
   // XXX I think this can be replaced with a zeroed 2D array in one line
@@ -1585,11 +1585,11 @@ int main(int argc, char **argv)
   // This is the main Event Builder loop
   while(true) {
 
+    // XXX this is a loop over numUSB, but within it, all USB streams
+    // are read on every iteration.  What's going on?
     for(unsigned int i=0; i < numUSB; i++) {
 
-      DataVector *DataVectorPtr = &(CurrentDataVector[i]);
-
-      while(!OVUSBStream[i].GetNextTimeStamp(DataVectorPtr)) {
+      while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]))) {
         timeout = time(0);
 
         int status = 0;
@@ -1638,20 +1638,22 @@ int main(int argc, char **argv)
             delete gThreads[k];
         if(joinerThread) delete joinerThread;
 
-        cout << "Joined all threads!\n";
+        cout << "Joined all main threads!\n";
 
         // Rename files
-        for(unsigned int i = 0; i<numUSB; i++) {
-          string tempfilename = OVUSBStream[i].GetFileName();
+        for(unsigned int j = 0; j<numUSB; j++) {
+          string tempfilename = OVUSBStream[j].GetFileName();
           size_t mypos = tempfilename.find("binary");
           if(mypos != tempfilename.npos)
             tempfilename.replace(mypos, 6, "decoded");
           tempfilename += ".done";
 
           errno = 0;
-          while(rename(OVUSBStream[i].GetFileName(), tempfilename.c_str())) {
+          printf("Renaming %s to %s\n", OVUSBStream[j].GetFileName(),
+                 tempfilename.c_str());
+          while(rename(OVUSBStream[j].GetFileName(), tempfilename.c_str())) {
             log_msg(LOG_ERR, "Could not rename binary data file %s to %s: %s.\n",
-                    OVUSBStream[i].GetFileName(), tempfilename.c_str(),
+                    OVUSBStream[j].GetFileName(), tempfilename.c_str(),
                     strerror(errno));
             sleep(1);
           }
@@ -1687,12 +1689,28 @@ int main(int argc, char **argv)
     // index of minimum event added to USB stream
     int MinIndex=0;
     for(unsigned int i=0; i < numUSB; i++) {
+      //                  This looks like an elaborate
+      //             test for CurrentDataVector[i].empty().
+      //                    MinIndex ends up getting
+      //
+      //                    set to whichever is the
+      //                  last CurrentDataVector to be
+      //                     empty, or the last if
+      //
+      //                    none are empty, and all
+      //                     the iterators are set
+      //                          to begin().
       CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
       if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) MinIndex = i;
     }
     MinDataVector.assign(ExtraDataVector.begin(), ExtraDataVector.end());
     MinIndexVector.assign(ExtraIndexVector.begin(), ExtraIndexVector.end());
 
+    //                         Ok, so this is an
+    //                  elaborate test for whether all
+    //                       CurrentDataVectors are
+    //
+    //                      non-empty up to numUSB.
     while( CurrentDataVectorIt[MinIndex]!=CurrentDataVector[MinIndex].end() ) {
       // Until 1 USB stream finishes timestamp
 
