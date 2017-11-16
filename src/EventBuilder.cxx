@@ -50,8 +50,8 @@ static const int timestampsperoutput = 5; // XXX what?
 static const int numChannels=64; // Number of channels in M64
 static const int maxModules=64; // Maximum number of modules PER USB
                                 // (okay if less than total number of modules)
-static const int MAXTIME=60; // Seconds before timeout looking for baselines
-                             // and binary data
+static const int MAXTIME=5; // Seconds before timeout looking for baselines
+                             // and binary data.  Was 60.  Using 5 for testing.
 static const int ENDTIME=5; // Number of seconds before time out at end of run
 static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
                                                       // sync pulse at 62.5MHz
@@ -1599,6 +1599,7 @@ int main(int argc, char **argv)
             return 127;
           }
           cout << "Files are not ready...\n";
+          goto out; // Let's try escaping here and see if we can get files built
           if((int)difftime(time(0), timeout) > ENDTIME &&
              (read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME)) {
             while(!write_endofrun_block(fname, dataFile)) sleep(1);
@@ -1656,6 +1657,9 @@ int main(int argc, char **argv)
           }
         }
       }
+      out:
+      for(int i = 0; i < 10; i++)
+        printf("%d size %d\n", i, (int)CurrentDataVector[i].size());
     }
 
     // Open output data file
@@ -1760,6 +1764,7 @@ int main(int argc, char **argv)
     cout << "Number of Merged Muon Events: " << EventCounter << endl;
     cout << "Processed Time Stamp: " << OVUSBStream[0].GetTOLUTC() << endl;
     EventCounter = 0;
+    break; // XXX get out for testing
   }
 
   cout << "Normally this program should not terminate like it is now...\n";
