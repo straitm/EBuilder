@@ -52,7 +52,7 @@ static const int maxModules=64; // Maximum number of modules PER USB
                                 // (okay if less than total number of modules)
 static const int MAXTIME=5; // Seconds before timeout looking for baselines
                              // and binary data.  Was 60.  Using 5 for testing.
-static const int ENDTIME=5; // Number of seconds before time out at end of run
+static const int ENDTIME=1; // Number of seconds before time out at end of run
 static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
                                                       // sync pulse at 62.5MHz
 
@@ -1648,8 +1648,6 @@ int main(int argc, char **argv)
           tempfilename += ".done";
 
           errno = 0;
-          printf("Renaming %s to %s\n", OVUSBStream[j].GetFileName(),
-                 tempfilename.c_str());
           while(rename(OVUSBStream[j].GetFileName(), tempfilename.c_str())) {
             log_msg(LOG_ERR, "Could not rename binary data file %s to %s: %s.\n",
                     OVUSBStream[j].GetFileName(), tempfilename.c_str(),
@@ -1658,9 +1656,7 @@ int main(int argc, char **argv)
           }
         }
       }
-      out:
-      for(int i = 0; i < 10; i++)
-        printf("%d size %d\n", i, (int)CurrentDataVector[i].size());
+      out: printf(".");
     }
 
     // Open output data file
