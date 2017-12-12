@@ -414,7 +414,7 @@ static void BuildEvent(DataVector *OutDataVector,
 
       nbs = write(mydataFile, CurrEventHeader, sizeof(OVEventHeader));
 
-      if (nbs<0){
+      if (nbs != sizeof(OVEventHeader)){
         log_msg(LOG_CRIT, "Fatal Error: Cannot write event header to disk!\n");
         write_ebretval(-1);
         exit(1);
@@ -499,7 +499,7 @@ static void BuildEvent(DataVector *OutDataVector,
     CurrDataPacketHeader->SetTime16ns(time_16ns_hi*0x10000 + time_16ns_lo);
 
     nbs = write(mydataFile, CurrDataPacketHeader, sizeof(OVDataPacketHeader));
-    if (nbs<0){
+    if (nbs != sizeof(OVDataPacketHeader)){
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header to disk!\n");
       write_ebretval(-1);
       exit(1);
@@ -515,7 +515,7 @@ static void BuildEvent(DataVector *OutDataVector,
         CurrHit.SetHit(channel, charge);
 
         nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
-        if (nbs<0){
+        if (nbs != sizeof(OVHitData)){
           log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
           write_ebretval(-1);
           exit(1);
@@ -534,7 +534,7 @@ static void BuildEvent(DataVector *OutDataVector,
             CurrHit.SetHit(16*(nwords-4-w) + n, 1);
 
             nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
-            if (nbs<0){
+            if (nbs != sizeof(OVHitData)){
               log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
               write_ebretval(-1);
               exit(1);
@@ -1516,7 +1516,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
   CurrEventHeader->SetTimeSec(0);
   CurrEventHeader->SetNOVDataPackets(-99);
 
-  if(write(data_fd, CurrEventHeader, sizeof(OVEventHeader)) < 0){
+  if(write(data_fd, CurrEventHeader, sizeof(OVEventHeader)) != sizeof(OVEventHeader)){
     log_msg(LOG_ERR, "End of run write error\n");
     return false;
   } // To be optimized
