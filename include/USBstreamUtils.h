@@ -1,6 +1,7 @@
 #ifndef __USBStreamUtils__
 #define __USBStreamUtils__
 
+#include <stdint.h>
 #include <string>
 #include <vector>
 
@@ -11,8 +12,8 @@ char* config_string(const char* path, const char* key);
 // Send message to screen and syslog
 void log_msg(int priority, const char * const format, ...);
 
-bool LessThan(const std::vector<int> & lhs,
-              const std::vector<int> & rhs, int ClockSlew);
+bool LessThan(const std::vector<int32_t> & lhs,
+              const std::vector<int32_t> & rhs, int ClockSlew);
 
 void start_log();
 

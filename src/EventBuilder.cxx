@@ -372,7 +372,7 @@ static int LoadAll()
 }
 
 static void BuildEvent(DataVector *OutDataVector,
-                       vector<int> *OutIndexVector, int mydataFile)
+                       vector<int32_t> *OutIndexVector, int mydataFile)
 {
 
   int k, nbs, length, module, type, nwords, module_local, usb;
@@ -383,7 +383,7 @@ static void BuildEvent(DataVector *OutDataVector,
   long int time_16ns_hi = 0;
   long int time_16ns_lo = 0;
   DataVector::iterator CurrentOutDataVectorIt = OutDataVector->begin();
-  vector<int>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
+  vector<int32_t>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
   OVEventHeader CurrEventHeader;
   OVDataPacketHeader CurrDataPacketHeader;
 
@@ -1531,14 +1531,14 @@ int main(int argc, char **argv)
   }
 
   DataVector ExtraDataVector; // DataVector carries over events from last time stamp
-  vector<int> ExtraIndexVector;
+  vector<int32_t> ExtraIndexVector;
 
   // Array of DataVectors for current timestamp to process
   DataVector CurrentDataVector[maxUSB];
   DataVector::iterator CurrentDataVectorIt[maxUSB];
   DataVector MinDataVector; // DataVector of current minimum data packets
-  vector<int> MinDataPacket; // Minimum and Last Data Packets added
-  vector<int> MinIndexVector; // Vector of USB index of Minimum Data Packet
+  vector<int32_t> MinDataPacket; // Minimum and Last Data Packets added
+  vector<int32_t> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int dataFile = 0; // output file descriptor
   string fname = "ebuilder.out"; // output file name
   int EventCounter = 0;
@@ -1718,7 +1718,7 @@ int main(int argc, char **argv)
 
       for(unsigned int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
 
-        vector<int> CurrentDataPacket = *(CurrentDataVectorIt[k]);
+        vector<int32_t> CurrentDataPacket = *(CurrentDataVectorIt[k]);
 
         // Find real minimum; no clock slew
         if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {

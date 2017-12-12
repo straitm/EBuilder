@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <stdlib.h>
+#include <stdint.h>
 
 //______________________________________________________
 
@@ -344,7 +345,7 @@ void USBstream::check_data()
 	      int type = data[1] >> 15; // check to see if trigger packets
 	      //printf("Module: %d\n",module);
 	      //printf("Type: %d\n",type);
-	      std::vector<int> *packet=new std::vector<int>;
+	      std::vector<int32_t> *packet=new std::vector<int32_t>;
 	      bool hitarray1[64] = {0};
 	      bool hitarray2[64] = {0};
 	      

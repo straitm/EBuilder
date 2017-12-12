@@ -52,8 +52,9 @@ void log_msg(int priority, const char * const format, ...)
     vsyslog(priority, format, ap);
 }
 
-bool LessThan(const std::vector<int> & lhs,
-              const std::vector<int> & rhs, int ClockSlew)
+// XXX the intput vectors seem to be representing only 8-bit values
+bool LessThan(const std::vector<int32_t> & lhs,
+              const std::vector<int32_t> & rhs, int ClockSlew)
 {
   if( lhs.size() < 7 || rhs.size() < 7) {
     log_msg(LOG_ERR,"Vector size error! Could not compare OV Hits\n");
