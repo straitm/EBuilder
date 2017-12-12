@@ -84,7 +84,8 @@ struct OVHitData {
   OVHitData()
   {
     memset(this, 0, sizeof(*this));
-    compatibility = 0xdecafaedadffcade;
+    // "HIT DATA"
+    compatibility = 0x4154414420544948;
   }
 
   void SetHit(char channel_, short int charge_)
@@ -105,7 +106,8 @@ public:
   OVEventHeader()
   { // See comments in OVEventHeader
     memset(this, 0, sizeof(*this));
-    compatibility = 0xefbeaddeefbeadde;
+    // "EVENT HD"
+    compatibility = 0x444820544E455645;
   }
 
   void SetNOVDataPackets(char npackets) { data.first = npackets; }
@@ -124,7 +126,7 @@ public:
   // and unpredictable values into the output file, which makes it hard to
   // check whether the program is producing output that matches my reference
   // output file from Camillo.  To keep the layout the same, for now I am
-  // writing out the same length of zeros.  I am *not* going to be reading
+  // writing out the same length of meaningful text.  I am *not* going to be reading
   // these files back in with the Double Chooz "Dogsifier", so there's no
   // reason to retain this compatibility after initial testing.
   uint64_t compatibility;
@@ -139,7 +141,8 @@ public:
   OVDataPacketHeader()
   { // See comments in OVEventHeader
     memset(this, 0, sizeof(*this));
-    compatibility = 0xefcdab8967452301;
+    // "PACKETHD"
+    compatibility = 0x444854454B434150;
   }
 
   void SetNHits(char nh) { fNHits = nh; }
