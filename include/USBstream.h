@@ -82,26 +82,24 @@ private:
 struct OVHitData {
 
   OVHitData()
-  {
+  { // See comments in OVEventHeader
     memset(this, 0, sizeof(*this));
     // "HIT DATA"
     compatibility = 0x4154414420544948;
   }
 
-  void SetHit(char channel_, short int charge_)
+  void SetHit(const int8_t channel_, const int16_t charge_)
   {
     channel = channel_;
     charge = charge_;
   }
 
   uint64_t compatibility;
-  char channel;
-  short int charge;
+  int8_t channel;
+  int16_t charge;
 };
 
-class OVEventHeader {
-
-public:
+struct OVEventHeader {
 
   OVEventHeader()
   { // See comments in OVEventHeader
@@ -134,9 +132,7 @@ public:
   uint64_t time_sec;
 };
 
-class OVDataPacketHeader {
-
-public:
+struct OVDataPacketHeader {
 
   OVDataPacketHeader()
   { // See comments in OVEventHeader
@@ -145,24 +141,24 @@ public:
     compatibility = 0x444854454B434150;
   }
 
-  void SetNHits(char nh) { fNHits = nh; }
-  void SetModule(short int mod) { fModule = mod; }
-  void SetType(char type) { fDataType = type; }
-  void SetTime16ns(long int time_16ns) { fTime16ns = time_16ns; }
+  void SetNHits(int8_t nh) { fNHits = nh; }
+  void SetModule(int16_t mod) { fModule = mod; }
+  void SetType(int8_t type) { fDataType = type; }
+  void SetTime16ns(int64_t time_16ns) { fTime16ns = time_16ns; }
 
-  char GetNHits() const { return fNHits; }
-  short int GetModule() const { return fModule; }
-  char GetType() const { return fDataType; }
-  long int GetTime16ns() const { return fTime16ns; }
+  int8_t GetNHits() const { return fNHits; }
+  int16_t GetModule() const { return fModule; }
+  int8_t GetType() const { return fDataType; }
+  int64_t GetTime16ns() const { return fTime16ns; }
 
 private:
 
   uint64_t compatibility;
 
-  char fNHits;
-  char fDataType;
-  short int fModule;
-  long int fTime16ns;
+  int8_t fNHits;
+  int8_t fDataType;
+  int16_t fModule;
+  int64_t fTime16ns;
 };
 
 #endif

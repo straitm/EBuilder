@@ -375,9 +375,10 @@ static void BuildEvent(DataVector *OutDataVector,
                        vector<int32_t> *OutIndexVector, int mydataFile)
 {
 
-  int k, nbs, length, module, type, nwords, module_local, usb;
-  char channel;
-  short int charge;
+  int nbs, nwords, module_local, usb;
+  int16_t module;
+  int8_t channel;
+  int16_t charge;
   int64_t time_s_hi = 0;
   int64_t time_s_lo = 0;
   int64_t time_16ns_hi = 0;
@@ -427,7 +428,7 @@ static void BuildEvent(DataVector *OutDataVector,
     // MySQL table
     usb = OVUSBStream[*CurrentOutIndexVectorIt].GetUSB();
     module = PMTUniqueMap[usb*1000+module_local];
-    type = CurrentOutDataVectorIt->at(0) >> 15;
+    int8_t type = CurrentOutDataVectorIt->at(0) >> 15;
     time_16ns_hi = CurrentOutDataVectorIt->at(5);
     time_16ns_lo = CurrentOutDataVectorIt->at(6);
 
@@ -458,7 +459,8 @@ static void BuildEvent(DataVector *OutDataVector,
     }
 
     // For latch packets, compute the number of hits
-    k = 0;
+    int k = 0;
+    int8_t length = 0;
     if(type == 0) {
       for(int w = 0; w < nwords - 3 ; w++) { // fan-in packets have length=6
         int temp = CurrentOutDataVectorIt->at(7+w) + 0;
@@ -475,10 +477,10 @@ static void BuildEvent(DataVector *OutDataVector,
          * at expected clock count */
         // Firmware only allows this for special sync pulse packets in trigger box
         if(length == 32) {
-          const long int time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
-          const long int expected_time_16ns_sync =
+          const int64_t time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
+          const int64_t expected_time_16ns_sync =
             (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
-          const long int expected_time_16ns_sync_offset =
+          const int64_t expected_time_16ns_sync_offset =
             *(PMTOffsets[usb]+module_local);
 
           if(expected_time_16ns_sync - expected_time_16ns_sync_offset
@@ -490,12 +492,14 @@ static void BuildEvent(DataVector *OutDataVector,
       }
     }
     else {
+      // XXX Magic here.  What is 7?  Why divide by 2?  Also it's a little
+      // scary that length overflows at 128. Had we better check for that?
       length = (CurrentOutDataVectorIt->size()-7)/2;
     }
 
-    CurrDataPacketHeader.SetNHits((char)length);
-    CurrDataPacketHeader.SetModule((short int)module);
-    CurrDataPacketHeader.SetType((char)type);
+    CurrDataPacketHeader.SetNHits(length);
+    CurrDataPacketHeader.SetModule(module);
+    CurrDataPacketHeader.SetType(type);
     CurrDataPacketHeader.SetTime16ns(time_16ns_hi*0x10000 + time_16ns_lo);
 
     nbs = write(mydataFile, &CurrDataPacketHeader, sizeof(OVDataPacketHeader));
@@ -509,8 +513,8 @@ static void BuildEvent(DataVector *OutDataVector,
 
       for(int m = 0; m <= length - 1; m++) { //Loop over all hits in the packet
 
-        channel = (char)CurrentOutDataVectorIt->at(8+2*m);
-        charge = (short int)CurrentOutDataVectorIt->at(7+2*m);
+        channel = (int8_t)CurrentOutDataVectorIt->at(8+2*m);
+        charge = (int16_t)CurrentOutDataVectorIt->at(7+2*m);
         OVHitData CurrHit;
         CurrHit.SetHit(channel, charge);
 
