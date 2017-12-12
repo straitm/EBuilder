@@ -6,6 +6,8 @@
 #include <fstream>
 #include <deque>
 #include <sys/stat.h>
+#include <string.h>
+#include <stdint.h>
 
 class USBstream {
 
@@ -78,12 +80,20 @@ private:
 };
 
 struct OVHitData {
+
+  OVHitData()
+  {
+    memset(this, 0, sizeof(*this));
+    compatibility = 0xdecafaedadffcade;
+  }
+
   void SetHit(char channel_, short int charge_)
   {
     channel = channel_;
     charge = charge_;
   }
 
+  uint64_t compatibility;
   char channel;
   short int charge;
 };
@@ -92,28 +102,45 @@ class OVEventHeader {
 
 public:
 
-  OVEventHeader() {}
-  virtual ~OVEventHeader() {}
+  OVEventHeader()
+  { // See comments in OVEventHeader
+    memset(this, 0, sizeof(*this));
+    compatibility = 0xefbeaddeefbeadde;
+  }
 
-  void SetNOVDataPackets(char npackets) { fNOVDataPackets = npackets; }
-  void SetTimeSec(long int time_s) { fTimeSec = time_s; }
+  void SetNOVDataPackets(char npackets) { data.first = npackets; }
+  void SetTimeSec(long int time_s) {  data.second = time_s; }
 
-  char GetNOVDataPackets() const { return fNOVDataPackets; }
-  long int GetTimeSec() const { return fTimeSec; }
+  char GetNOVDataPackets() const { return data.first; }
+  long int GetTimeSec() const { return data.second; }
 
-protected:
+  // When I found this class, it had a virtual destructor and was being
+  // write()ten and read() to a file in its entirety.  This means that the
+  // vtable pointer went to the file and then trashed the vtable pointer in the
+  // read()ing program.  Not good, except that because they were compiled with
+  // the same version of gcc, maybe it was the same value?  Or maybe it simply
+  // was never dereferenced because no virtual functions were ever called?  In
+  // any case, it primarily is causing me grief because it writes uninteresting
+  // and unpredictable values into the output file, which makes it hard to
+  // check whether the program is producing output that matches my reference
+  // output file from Camillo.  To keep the layout the same, for now I am
+  // writing out the same length of zeros.  I am *not* going to be reading
+  // these files back in with the Double Chooz "Dogsifier", so there's no
+  // reason to retain this compatibility after initial testing.
+  uint64_t compatibility;
 
-  char fNOVDataPackets;
-  long int fTimeSec;
-
+  std::pair<char, long int> data;
 };
 
 class OVDataPacketHeader {
 
 public:
 
-  OVDataPacketHeader() {}
-  virtual ~OVDataPacketHeader(){}
+  OVDataPacketHeader()
+  { // See comments in OVEventHeader
+    memset(this, 0, sizeof(*this));
+    compatibility = 0xefcdab8967452301;
+  }
 
   void SetNHits(char nh) { fNHits = nh; }
   void SetModule(short int mod) { fModule = mod; }
@@ -126,6 +153,8 @@ public:
   long int GetTime16ns() const { return fTime16ns; }
 
 private:
+
+  uint64_t compatibility;
 
   char fNHits;
   char fDataType;
