@@ -41,10 +41,6 @@ USBstream::USBstream()
   }
 }
 
-USBstream::~USBstream()
-{
-}
-
 void USBstream::Reset()
 {
   words = 0;
@@ -61,7 +57,6 @@ void USBstream::Reset()
 
 void USBstream::SetOffset(int *off)
 {
-
   for(int i = 0; i < 64; i++) {
     if(*(off+i) > 0) {
       offset[i] = *(off+i);
@@ -69,7 +64,6 @@ void USBstream::SetOffset(int *off)
       offset[i] = 0;
     }
   }
-
 }
 
 void USBstream::SetThresh(int thresh, int threshtype)
@@ -112,7 +106,7 @@ void USBstream::GetBaselineData(DataVector *vec)
 
 bool USBstream::GetNextTimeStamp(DataVector *vec)
 {
-  unsigned long int tmp = 0;
+  uint64_t tmp = 0;
   while(1) {
     if(myit==myvec.end())
       return false;
@@ -189,7 +183,7 @@ bool USBstream::decode()
   if(stat(myfilename.c_str(), &fileinfo) == 0) //get file size
     bytesleft = fileinfo.st_size;
 
-  unsigned int long word = 0; // holds 24-bit word being built, must be unsigned int
+  uint64_t word = 0; // holds 24-bit word being built, must be unsigned
   char exp = 0;        // expecting this type next
   int counter=0;
 
@@ -259,7 +253,7 @@ bool USBstream::decode()
   return true;
 }
 
-bool USBstream::got_word(unsigned long int d)
+bool USBstream::got_word(uint64_t d)
 {
   words++;
   char type = (d >> 22) & 3;
@@ -272,7 +266,7 @@ bool USBstream::got_word(unsigned long int d)
       if(check_debug(d))
         return restart;
 
-      data.push_back((unsigned int)(d & 0xffff));//segfault this line
+      data.push_back(d & 0xffff);
       check_data();
     }
   return 0;
@@ -282,9 +276,8 @@ void USBstream::check_data()
 {
   while(1)
   {
-    //cout << data.size() << endl;
     bool got_packet = false;
-    unsigned int got = data.size();
+    size_t got = data.size();
 
     if(!got)
       break;
@@ -298,8 +291,8 @@ void USBstream::check_data()
         if(!(got >= len + 1))
           break;
         unsigned int par = 0;
-        int module = (data[1] >> 8) & 0x7f;
-        int type = data[1] >> 15; // check to see if trigger packets
+        int8_t module = (data[1] >> 8) & 0x7f;
+        int8_t type = data[1] >> 15; // check to see if trigger packets
         std::vector<int32_t> *packet=new std::vector<int32_t>;
         bool hitarray1[64] = {0};
         bool hitarray2[64] = {0};
@@ -468,9 +461,9 @@ void USBstream::check_data()
   # c9 timestamp_lo
 */
 
-bool USBstream::check_debug(unsigned long int d)
+bool USBstream::check_debug(uint64_t d)
 {
-  unsigned int a = (d >> 16) & 0xff;
+  uint32_t a = (d >> 16) & 0xff;
   d = d & 0xffff;
 
   if(a == 0xc8)
@@ -510,9 +503,9 @@ bool USBstream::check_debug(unsigned long int d)
       word_count[word_index++] = d;
       if(word_index == 4)
         {
-          long int t = (word_count[0] << 16) + word_count[1];
-          long int v = (word_count[2] << 16) + word_count[3];
-          long int diff = t - v - words;
+          int64_t t = (word_count[0] << 16) + word_count[1];
+          int64_t v = (word_count[2] << 16) + word_count[3];
+          int64_t diff = t - v - words;
           if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
           flush_extra();
         }

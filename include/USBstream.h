@@ -14,12 +14,11 @@ class USBstream {
 public:
 
   USBstream();
-  virtual ~USBstream();
 
   void SetUSB(int usb) { myusb=usb; }
   void SetThresh(int thresh, int threshtype);
   void SetIsFanUSB() { IsFanUSB = true; }
-  void SetTOLUTC(unsigned long int tolutc) { mytolutc=tolutc; }
+  void SetTOLUTC(uint64_t tolutc) { mytolutc=tolutc; }
   void SetOffset(int *off);
   void SetBaseline(int **base);
 
@@ -29,7 +28,7 @@ public:
   bool GetIsFanUSB() { return IsFanUSB; }
   int GetNPMT() const { return mynpmt; }
   const char* GetFileName() { return myfilename.c_str(); }
-  unsigned long int GetTOLUTC() const { return mytolutc; }
+  uint64_t GetTOLUTC() const { return mytolutc; }
 
   bool GetNextTimeStamp(DataVector *vec);
   void GetBaselineData(DataVector *vec);
@@ -45,7 +44,7 @@ private:
   int offset[64];
   int adj1[64];
   int adj2[64];
-  unsigned long int mytolutc;
+  uint64_t mytolutc;
   std::string myfilename;
   std::fstream *myFile;
   bool IsOpen;
@@ -56,22 +55,26 @@ private:
   DataVector::iterator myit;
 
   // These functions are for the decoding
-  bool got_word(unsigned long int d);
+  bool got_word(uint64_t d);
   void check_data();
-  bool check_debug(unsigned long int d);
+  bool check_debug(uint64_t d);
   void flush_extra();
 
   // These variables are for the decoding
-  long int words;
+  int64_t words;
   bool got_hi;
   bool restart;
   bool first_packet;
-  int time_hi_1;
-  int time_hi_2;
-  int time_lo_1;
-  int time_lo_2;
+  int32_t time_hi_1;
+  int32_t time_hi_2;
+  int32_t time_lo_1;
+  int32_t time_lo_2;
   int timestamps_read;
-  std::deque<int> data;           // 11
+
+  // XXX this is signed, but gets things cast to unsigned pushed into it.
+  // Probably they get cast back and forth and happen to be right in the end...
+  std::deque<int32_t> data;      // 11
+
   bool extra;                     // leftovers
   unsigned int word_index;
   unsigned int word_count[4];
