@@ -110,11 +110,11 @@ public:
     compatibility = 0x444820544E455645;
   }
 
-  void SetNOVDataPackets(char npackets) { data.first = npackets; }
-  void SetTimeSec(long int time_s) {  data.second = time_s; }
+  void SetNOVDataPackets(const int8_t npackets) { n_ov_data_packets = npackets; }
+  void SetTimeSec(const uint32_t time_s) {  time_sec = time_s; }
 
-  char GetNOVDataPackets() const { return data.first; }
-  long int GetTimeSec() const { return data.second; }
+  int8_t GetNOVDataPackets() const { return n_ov_data_packets; }
+  uint32_t GetTimeSec() const { return time_sec; }
 
   // When I found this class, it had a virtual destructor and was being
   // write()ten and read() to a file in its entirety.  This means that the
@@ -130,8 +130,8 @@ public:
   // these files back in with the Double Chooz "Dogsifier", so there's no
   // reason to retain this compatibility after initial testing.
   uint64_t compatibility;
-
-  std::pair<char, long int> data;
+  int8_t n_ov_data_packets;
+  uint64_t time_sec;
 };
 
 class OVDataPacketHeader {

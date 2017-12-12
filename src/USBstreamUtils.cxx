@@ -61,10 +61,10 @@ bool LessThan(const std::vector<int32_t> & lhs,
     exit(1);
   }
 
-  const long int dt_high = (lhs[1]<<8) + lhs[2] - (rhs[1]<<8) - rhs[2];
-  const long int dt_low  = (lhs[3]<<8) + lhs[4] - (rhs[3]<<8) - rhs[4];
-  const long int dt_16ns_high = lhs[5] - rhs[5];
-  const long int dt_16ns_low  = lhs[6] - rhs[6];
+  const int64_t dt_high = (lhs[1]<<8) + lhs[2] - (rhs[1]<<8) - rhs[2];
+  const int64_t dt_low  = (lhs[3]<<8) + lhs[4] - (rhs[3]<<8) - rhs[4];
+  const int64_t dt_16ns_high = lhs[5] - rhs[5];
+  const int64_t dt_16ns_low  = lhs[6] - rhs[6];
 
   if(dt_high != 0) return dt_high < 0; // Very different timestamps
 

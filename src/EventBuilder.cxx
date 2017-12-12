@@ -378,10 +378,10 @@ static void BuildEvent(DataVector *OutDataVector,
   int k, nbs, length, module, type, nwords, module_local, usb;
   char channel;
   short int charge;
-  long int time_s_hi = 0;
-  long int time_s_lo = 0;
-  long int time_16ns_hi = 0;
-  long int time_16ns_lo = 0;
+  int64_t time_s_hi = 0;
+  int64_t time_s_lo = 0;
+  int64_t time_16ns_hi = 0;
+  int64_t time_16ns_lo = 0;
   DataVector::iterator CurrentOutDataVectorIt = OutDataVector->begin();
   vector<int32_t>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
   OVEventHeader CurrEventHeader;
