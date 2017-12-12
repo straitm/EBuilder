@@ -384,8 +384,8 @@ static void BuildEvent(DataVector *OutDataVector,
   long int time_16ns_lo = 0;
   DataVector::iterator CurrentOutDataVectorIt = OutDataVector->begin();
   vector<int>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
-  OVEventHeader *CurrEventHeader = new OVEventHeader;
-  OVDataPacketHeader *CurrDataPacketHeader = new OVDataPacketHeader;
+  OVEventHeader CurrEventHeader;
+  OVDataPacketHeader CurrDataPacketHeader;
 
   int cnt=0;
 
@@ -409,10 +409,10 @@ static void BuildEvent(DataVector *OutDataVector,
     if(CurrentOutDataVectorIt == OutDataVector->begin()) {
       time_s_hi = (CurrentOutDataVectorIt->at(1) << 8) + CurrentOutDataVectorIt->at(2);
       time_s_lo = (CurrentOutDataVectorIt->at(3) << 8) + CurrentOutDataVectorIt->at(4);
-      CurrEventHeader->SetTimeSec(time_s_hi*0x10000 + time_s_lo);
-      CurrEventHeader->SetNOVDataPackets(OutDataVector->size());
-
-      nbs = write(mydataFile, CurrEventHeader, sizeof(OVEventHeader));
+      memset(&CurrEventHeader, 0, sizeof(OVEventHeader));
+      CurrEventHeader.SetTimeSec(time_s_hi*0x10000 + time_s_lo);
+      CurrEventHeader.SetNOVDataPackets(OutDataVector->size());
+      nbs = write(mydataFile, &CurrEventHeader, sizeof(OVEventHeader));
 
       if (nbs != sizeof(OVEventHeader)){
         log_msg(LOG_CRIT, "Fatal Error: Cannot write event header to disk!\n");
@@ -493,12 +493,12 @@ static void BuildEvent(DataVector *OutDataVector,
       length = (CurrentOutDataVectorIt->size()-7)/2;
     }
 
-    CurrDataPacketHeader->SetNHits((char)length);
-    CurrDataPacketHeader->SetModule((short int)module);
-    CurrDataPacketHeader->SetType((char)type);
-    CurrDataPacketHeader->SetTime16ns(time_16ns_hi*0x10000 + time_16ns_lo);
+    CurrDataPacketHeader.SetNHits((char)length);
+    CurrDataPacketHeader.SetModule((short int)module);
+    CurrDataPacketHeader.SetType((char)type);
+    CurrDataPacketHeader.SetTime16ns(time_16ns_hi*0x10000 + time_16ns_lo);
 
-    nbs = write(mydataFile, CurrDataPacketHeader, sizeof(OVDataPacketHeader));
+    nbs = write(mydataFile, &CurrDataPacketHeader, sizeof(OVDataPacketHeader));
     if (nbs != sizeof(OVDataPacketHeader)){
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header to disk!\n");
       write_ebretval(-1);
@@ -549,9 +549,6 @@ static void BuildEvent(DataVector *OutDataVector,
     CurrentOutDataVectorIt++;
     CurrentOutIndexVectorIt++;
   } // For all events in data packet
-
-  delete CurrEventHeader;
-  delete CurrDataPacketHeader;
 }
 
 static bool parse_options(int argc, char **argv)
@@ -1512,11 +1509,11 @@ static bool write_endofrun_block(string myfname, int data_fd)
     }
   }
 
-  OVEventHeader *CurrEventHeader = new OVEventHeader;
-  CurrEventHeader->SetTimeSec(0);
-  CurrEventHeader->SetNOVDataPackets(-99);
+  OVEventHeader CurrEventHeader;
+  CurrEventHeader.SetTimeSec(0);
+  CurrEventHeader.SetNOVDataPackets(-99);
 
-  if(write(data_fd, CurrEventHeader, sizeof(OVEventHeader)) != sizeof(OVEventHeader)){
+  if(write(data_fd, &CurrEventHeader, sizeof(OVEventHeader)) != sizeof(OVEventHeader)){
     log_msg(LOG_ERR, "End of run write error\n");
     return false;
   } // To be optimized
