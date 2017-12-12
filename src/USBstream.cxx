@@ -26,7 +26,7 @@ USBstream::USBstream()
   word_count[3] = 0;
   bytesleft=0;
   fsize=0;
-  myvec.reserve(65535);
+  myvec.reserve(0xffff);
   myit=myvec.begin();
   IsOpen = false;
   IsFanUSB = false;
@@ -121,12 +121,12 @@ bool USBstream::GetNextTimeStamp(DataVector *vec)
 
     if((*myit).size()>4) { // Look for next time stamp and break
       tmp = (*myit)[1] << 8;
-      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 65535)) {
+      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 0xffff)) {
         break;
       }
-      else if(tmp + (*myit)[2] == ((mytolutc >> 16) & 65535)) {
+      else if(tmp + (*myit)[2] == ((mytolutc >> 16) & 0xffff)) {
         tmp = (*myit)[3] << 8;
-        if(tmp + (*myit)[4] > (mytolutc & 65535)) {
+        if(tmp + (*myit)[4] > (mytolutc & 0xffff)) {
           break;
         }
       }
@@ -167,7 +167,7 @@ int USBstream::LoadFile(std::string nextfile)
 
 bool USBstream::decode()
 {
-  char filedata[65535];//data buffer
+  char filedata[0xffff];//data buffer
 
   if(!myFile->is_open()) {
     std::cerr << "File not open! Exiting.\n";
@@ -189,21 +189,20 @@ bool USBstream::decode()
   if(stat(myfilename.c_str(), &fileinfo) == 0) //get file size
     bytesleft = fileinfo.st_size;
 
-  unsigned int long word = 0;           // holds 24-bit word being built, must be unsigned int
+  unsigned int long word = 0; // holds 24-bit word being built, must be unsigned int
   char exp = 0;        // expecting this type next
-  //char byte[1];
   int counter=0;
 
   while(true)//loop over buffer packets
     {
       counter++;
-      if(bytesleft < 65535)
+      if(bytesleft < 0xffff)
         fsize = bytesleft;
 
       else
         {
-          fsize = 65535;
-          bytesleft -= 65535;
+          fsize = 0xffff;
+          bytesleft -= 0xffff;
         }
 
       myFile->read(filedata, fsize);//read data of appropriate size
@@ -245,8 +244,9 @@ bool USBstream::decode()
       if(fsize==bytesleft) //exit the loop after last read
         break;
     }
-  //extra.push_back(data); // Uncommenting these 2 lines assumes OVDAQ only writes complete packets to disk at start/end of files
-  //flush_extra();         // For now this is not true;
+  //extra.push_back(data); // Uncommenting these lines assumes OVDAQ only
+                           // writes complete packets to disk at start/end of files
+  //flush_extra();         // For now this is not true
 
   while(myFile->is_open()) {
     myFile->close();
@@ -261,11 +261,10 @@ bool USBstream::decode()
 
 bool USBstream::got_word(unsigned long int d)
 {
-  //cout << "got_word called" << endl;
   words++;
   char type = (d >> 22) & 3;
   if(type == 1)
-    {                    // command word, not data
+    { // command word, not data
       flush_extra();
     }
   else if(type == 3)
@@ -273,7 +272,7 @@ bool USBstream::got_word(unsigned long int d)
       if(check_debug(d))
         return restart;
 
-      data.push_back((unsigned int)(d & 65535));//segfault this line
+      data.push_back((unsigned int)(d & 0xffff));//segfault this line
       check_data();
     }
   return 0;
@@ -282,166 +281,180 @@ bool USBstream::got_word(unsigned long int d)
 void USBstream::check_data()
 {
   while(1)
-    {
-      //cout << data.size() << endl;
-      bool got_packet = false;
-      unsigned int got = data.size();
+  {
+    //cout << data.size() << endl;
+    bool got_packet = false;
+    unsigned int got = data.size();
 
-      if(!got)
+    if(!got)
+      break;
+    if(data[0] == 0xffff)
+    {            // check header
+      if(!(got >= 2))
+        break;
+      unsigned int len = data[1] & 0xff;
+      if(len > 1)
+      {
+        if(!(got >= len + 1))
           break;
-      if(data[0] == 0xffff)
-        {            // check header
-          if(!(got >= 2))
-            break;
-          unsigned int len = data[1] & 255;
-          if(len > 1)
-            {
-              if(!(got >= len + 1))
-                break;
-              unsigned int par = 0;
-              int module = (data[1] >> 8) & 0x7f;
-              int type = data[1] >> 15; // check to see if trigger packets
-              std::vector<int32_t> *packet=new std::vector<int32_t>;
-              bool hitarray1[64] = {0};
-              bool hitarray2[64] = {0};
+        unsigned int par = 0;
+        int module = (data[1] >> 8) & 0x7f;
+        int type = data[1] >> 15; // check to see if trigger packets
+        std::vector<int32_t> *packet=new std::vector<int32_t>;
+        bool hitarray1[64] = {0};
+        bool hitarray2[64] = {0};
 
-              for(unsigned int m = 1; m <= len; m++)
-                {
-                  par ^= data[m];
-                  if(m<len) {
-                    if(m<4) {
-                      // Handle trigger box packets
-                      if(m==3 && IsFanUSB) {
-                        if(module >= 0 && module <= 63) {
-                          int low = (data[m] & 0xffff) - offset[module];
-                          if(low < 0) {
-                            int high = packet->back() - 1;
-                            if(high < 0) { high += (1 << 13); } // sync packets come every 2^29 clock counts
-                            packet->pop_back(); packet->push_back(high);
-                            low += (1 << 16);
-                            packet->push_back(low);
-                          }
-                          else { packet->push_back(low); }
-                        }
-                        else { packet->push_back(data[m]); }
-                      }
-                      else {
-                        packet->push_back(data[m]);
-                      }
-                    }
-                    else {
-                      if(type) {
-                        if(m%2==0) { // ADC charge
-                          if(data[m+1]>63 || data[m+1]<0 || module<0 || module>63) {
-                          }
-                          else {
-                            data[m] -= baseline[module][data[m+1]];
-                            packet->push_back(data[m]);
-                            packet->push_back(data[m+1]);
-                            hitarray1[data[m+1]] = true;
-                            if(data[m]>mythresh) {
-                              hitarray2[data[m+1]] = true;
-                            }
-                          }
-                        }
-                      }
-                      else { packet->push_back(data[m]); }
-                    }
+        for(unsigned int m = 1; m <= len; m++)
+        {
+          par ^= data[m];
+          if(m<len) {
+            if(m<4) {
+              // Handle trigger box packets
+              if(m==3 && IsFanUSB) {
+                if(module >= 0 && module <= 63) {
+                  int low = (data[m] & 0xffff) - offset[module];
+                  if(low < 0) {
+                    int high = packet->back() - 1;
+
+                    // sync packets come every 2^29 clock counts
+                    if(high < 0) high += (1 << 13);
+
+                    packet->pop_back(); packet->push_back(high);
+                    low += (1 << 16);
+                    packet->push_back(low);
                   }
-                  if(m==1) {
-                    packet->push_back(time_hi_1);
-                    packet->push_back(time_hi_2);
-                    packet->push_back(time_lo_1);
-                    packet->push_back(time_lo_2);
-                  }
+                  else { packet->push_back(low); }
                 }
-
-              //cout << par << endl;
-              if(!par)
-                {                 // check parity
-                  //cout << "proper parity" << endl;
-                  got_packet = true;
-                  flush_extra();
-                  if(first_packet) { first_packet = false; }
-
-                  // This block builds muon events
-                  bool MuonEvent = false;
-                  if(UseThresh && type) {
-                    if(BothLayerThresh) {
-                      for(int i = 0; i<32; i++) {
-                        if( hitarray2[i]) {
-                          if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){ MuonEvent = true; break; }
-                        }
-                      }
-                    }
-                    else {
-                      for(int i = 0; i<32; i++) {
-                        if(hitarray1[i]) {
-                          if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){ MuonEvent = true; break; }
-                        }
-                        if(hitarray2[i]) {
-                          if( hitarray1[adj1[i]] || hitarray1[adj2[i]] ){ MuonEvent = true; break; }
-                        }
-                      }
-                    }
+                else { packet->push_back(data[m]); }
+              }
+              else {
+                packet->push_back(data[m]);
+              }
+            }
+            else {
+              if(type) {
+                if(m%2==0) { // ADC charge
+                  if(data[m+1]>63 || data[m+1]<0 || module<0 || module>63) {
                   }
                   else {
-                    MuonEvent = true;
-                  }
-                  if(packet->size() > 7) { // guaruntees at least 1 hit (size > 9 for 2 hits)
-                    if(MuonEvent) { // Mu-like double found for this event
-                      if( myvec.size() > 0 ) { //&& LessThan(*packet,myvec.back()) ) {
-                        DataVector::iterator InsertionSortIt = myvec.end();
-                        bool found = false;
-                        while(--InsertionSortIt >= myvec.begin()) {
-                          if(!LessThan(*packet,*InsertionSortIt, 0)) {
-                            // Due to edge strip trigger logic in the trigger box firmware,
-                            // we find duplicate trigger box packets of the form:
-                            // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000
-                            // p, 15366, 8086, 6131, 0, 1000 0000 0000 0000
-                            // These packets come from the same coincidence and one packet is missing
-                            // a hit because its partner was actually also satisfied the mu-like double
-                            // criteria.
-                            // We search for these duplicate trigger box packets and make an OR of the hit data
-                            if(IsFanUSB) {
-                              // packets should be separated by no more than 3 clock cycles
-                              if(!LessThan(*InsertionSortIt,*packet,3)) {
-                                // packets should come from the same module
-                                if(((packet->at(0) >> 8) & 0x7f) == ((InsertionSortIt->at(0) >> 8) & 0x7f)) {
-                                  // Trigger box packets all have a fixed size
-                                  (*InsertionSortIt)[7] |= (*packet)[7];
-                                  (*InsertionSortIt)[8] |= (*packet)[8];
-                                  found = true;
-                                  break;
-                                }
-                              }
-                            }
-                            myvec.insert(InsertionSortIt+1,*packet);
-                            found = true;
-                            break;
-                          }
-                        }
-                        if(!found) { myvec.insert(myvec.begin(),*packet); } // Reached beginning of myvec
-                      }
-                      else { myvec.push_back(*packet); }
+                    data[m] -= baseline[module][data[m+1]];
+                    packet->push_back(data[m]);
+                    packet->push_back(data[m+1]);
+                    hitarray1[data[m+1]] = true;
+                    if(data[m]>mythresh) {
+                      hitarray2[data[m+1]] = true;
                     }
                   }
-                  //delete first few elements of data
-                  data.erase(data.begin(),data.begin()+len+1); //(no longer)
                 }
-              else {
-                printf("Found packet parity mismatch in USB stream %d\n",myusb);
               }
-              delete packet;
+              else { packet->push_back(data[m]); }
             }
+          }
+          if(m==1) {
+            packet->push_back(time_hi_1);
+            packet->push_back(time_hi_2);
+            packet->push_back(time_lo_1);
+            packet->push_back(time_lo_2);
+          }
         }
+
+        if(!par)
+        { // check parity
+          got_packet = true;
+          flush_extra();
+          if(first_packet) { first_packet = false; }
+
+          // This block builds muon events
+          bool MuonEvent = false;
+          if(UseThresh && type) {
+            if(BothLayerThresh) {
+              for(int i = 0; i<32; i++) {
+                if( hitarray2[i]) {
+                  if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
+                    MuonEvent = true;
+                    break;
+                  }
+                }
+              }
+            }
+            else {
+              for(int i = 0; i<32; i++) {
+                if(hitarray1[i]) {
+                  if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
+                    MuonEvent = true;
+                    break;
+                  }
+                }
+                if(hitarray2[i]) {
+                  if( hitarray1[adj1[i]] || hitarray1[adj2[i]] ){
+                    MuonEvent = true;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          else {
+            MuonEvent = true;
+          }
+          if(packet->size() > 7) { // guaruntees at least 1 hit (size > 9 for 2 hits)
+            if(MuonEvent) { // Mu-like double found for this event
+              if( myvec.size() > 0 ) { //&& LessThan(*packet,myvec.back()) ) {
+                DataVector::iterator InsertionSortIt = myvec.end();
+                bool found = false;
+                while(--InsertionSortIt >= myvec.begin()) {
+                  if(!LessThan(*packet,*InsertionSortIt, 0)) {
+                    // Due to edge strip trigger logic in the trigger box firmware,
+                    // we find duplicate trigger box packets of the form:
+                    // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000
+                    // p, 15366, 8086, 6131, 0, 1000 0000 0000 0000
+                    // These packets come from the same coincidence and one
+                    // packet is missing a hit because its partner was actually
+                    // also satisfied the mu-like double criteria.
+                    // We search for these duplicate trigger box packets and
+                    // make an OR of the hit data
+                    if(IsFanUSB) {
+                      // packets should be separated by no more than 3 clock cycles
+                      if(!LessThan(*InsertionSortIt,*packet,3)) {
+                        // packets should come from the same module
+                        if(((packet->at(0) >> 8) & 0x7f) ==
+                            ((InsertionSortIt->at(0) >> 8) & 0x7f)) {
+                          // Trigger box packets all have a fixed size
+                          (*InsertionSortIt)[7] |= (*packet)[7];
+                          (*InsertionSortIt)[8] |= (*packet)[8];
+                          found = true;
+                          break;
+                        }
+                      }
+                    }
+                    myvec.insert(InsertionSortIt+1,*packet);
+                    found = true;
+                    break;
+                  }
+                }
+
+                // Reached beginning of myvec
+                if(!found) { myvec.insert(myvec.begin(),*packet); }
+              }
+                else { myvec.push_back(*packet); }
+              }
+            }
+            //delete first few elements of data
+            data.erase(data.begin(),data.begin()+len+1); //(no longer)
+          }
+          else {
+            printf("Found packet parity mismatch in USB stream %d\n",myusb);
+          }
+          delete packet;
+        }
+      }
       if(!got_packet)
-        {
-          extra = true;
-          data.pop_front();
-        }
+      {
+        extra = true;
+        data.pop_front();
+      }
     }
-}
+  }
 
 /*
   # c1 dac pmt
@@ -457,13 +470,13 @@ void USBstream::check_data()
 
 bool USBstream::check_debug(unsigned long int d)
 {
-  unsigned int a = (d >> 16) & 255;
-  d = d & 65535;
+  unsigned int a = (d >> 16) & 0xff;
+  d = d & 0xffff;
 
   if(a == 0xc8)
     {
-      time_hi_1 = (d >> 8) & 255;
-      time_hi_2 = d & 255;
+      time_hi_1 = (d >> 8) & 0xff;
+      time_hi_2 = d & 0xff;
       got_hi = true;
       return 1;
     }
@@ -471,12 +484,14 @@ bool USBstream::check_debug(unsigned long int d)
     {
       if(got_hi)
         {
-          time_lo_1 = (d >> 8) & 255;
-          time_lo_2 = d & 255;
+          time_lo_1 = (d >> 8) & 0xff;
+          time_lo_2 = d & 0xff;
           got_hi = false;
           timestamps_read++;
           flush_extra();
-          if(!mytolutc) { // Check to see if first time stamp found and if so, rewind file
+
+          // Check to see if first time stamp found and if so, rewind file
+          if(!mytolutc) {
             mytolutc = (time_hi_1 << 8) + time_hi_2;
             mytolutc = (mytolutc << 16) + (time_lo_1 << 8) + time_lo_2;
             restart = true;
@@ -500,7 +515,6 @@ bool USBstream::check_debug(unsigned long int d)
           long int diff = t - v - words;
           if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
           flush_extra();
-          //print "n,$t,$v,$words,$diff\n";
         }
       return 1;
     }
@@ -522,7 +536,9 @@ void USBstream::flush_extra()
 {
   if(extra) {
     extra = false;
-    if(!first_packet && mytolutc) { // Ignore incomplete packets at the beginning of the run
+
+    // Ignore incomplete packets at the beginning of the run
+    if(!first_packet && mytolutc) {
       printf("Found extra packet (?) in file %s\n",myfilename.c_str());
     }
   }
