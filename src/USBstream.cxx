@@ -2,6 +2,7 @@
 #include "USBstream.h"
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -153,14 +154,15 @@ bool USBstream::GetNextTimeStamp(DataVector *vec) {
 
 int USBstream::LoadFile(std::string nextfile) {//unsigned long int ti) {
 
-  sprintf(myfilename,"%s_%d",nextfile.c_str(),GetUSB());
-  //printf("%s_%d\n",nextfile.c_str(),GetUSB());
+  std::ostringstream smyfilename;
+  smyfilename << nextfile << "_" << GetUSB();
+  myfilename = smyfilename.str();
 
   struct stat myfileinfo;
   if(IsOpen == false) {
-    myFile = new std::fstream(myfilename, std::fstream::in | std::fstream::binary);
+    myFile = new std::fstream(myfilename.c_str(), std::fstream::in | std::fstream::binary);
     if(myFile->is_open()) { 
-      if(stat(myfilename, &myfileinfo) == 0) { //get file size
+      if(stat(myfilename.c_str(), &myfileinfo) == 0) { //get file size
 	if(myfileinfo.st_size) { IsOpen = true; return 1; }
       }
       myFile->close(); delete myFile; // Clean up 
@@ -198,7 +200,7 @@ bool USBstream::decode()
   Reset();
 
   struct stat fileinfo;
-  if(stat(myfilename, &fileinfo) == 0) //get file size
+  if(stat(myfilename.c_str(), &fileinfo) == 0) //get file size
     bytesleft = fileinfo.st_size;
   
   unsigned int long word = 0;           // holds 24-bit word being built, must be unsigned int 
@@ -258,8 +260,7 @@ bool USBstream::decode()
 	      else
 		{
 		  char msg_buf[100];
-		  sprintf(msg_buf,"Found corrupted data in file %s",myfilename);
-		  printf("Found corrupted data in file %s\n",myfilename);
+		  printf("Found corrupted data in file %s\n",myfilename.c_str());
 		  exp = 0;
 		}
 	    }
@@ -589,7 +590,7 @@ void USBstream::flush_extra()
     extra = false;
     if(!first_packet && mytolutc) { // Ignore incomplete packets at the beginning of the run
       //gaibu_msg(MNOTICE,gaibu_debug_msg);
-      printf("Found extra packet (?) in file %s\n",myfilename);
+      printf("Found extra packet (?) in file %s\n",myfilename.c_str());
     }    
   }
 }

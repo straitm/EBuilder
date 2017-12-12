@@ -28,7 +28,7 @@ public:
   int GetUSB() const { return myusb; }
   bool GetIsFanUSB() { return IsFanUSB; }
   int GetNPMT() const { return mynpmt; }
-  char* GetFileName() { return myfilename; }
+  const char* GetFileName() { return myfilename.c_str(); }
   unsigned long int GetTOLUTC() const { return mytolutc; }
 
   bool GetNextTimeStamp(DataVector *vec);
@@ -46,7 +46,7 @@ private:
   int adj1[64];
   int adj2[64];
   unsigned long int mytolutc;
-  char myfilename[100]; // XXX looks dangerous
+  std::string myfilename;
   std::fstream *myFile;
   bool IsOpen;
   bool IsFanUSB;
