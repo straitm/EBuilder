@@ -61,9 +61,7 @@ static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
 
 // Mutated as program runs
 static int OV_EB_State = 0;
-static bool finished=false; // Flag for joiner thread
 static pthread_t gThreads[maxUSB]; // An array of threads to decode files
-static pthread_t joinerThread; // Joiner thread for decoding
 static int initial_delay = 0;
 static vector<string> files; // vector to hold file names
 
@@ -147,17 +145,15 @@ static void *handle(void *ptr) // This defines a thread to decode files
   return NULL;
 }
 
-static void *joiner(void *ptr) // This thread joins the above threads
+// Joins all the threads
+static void joiner(const unsigned long int nusb)
 {
-  unsigned long int nusb = (unsigned long int)ptr;
   if(nusb < numUSB)
     for(unsigned int n = 0; n < nusb; n++)
       pthread_join(gThreads[Datamap[n]], NULL);
   else
     for(unsigned int n = 0; n < numUSB; n++)
       pthread_join(gThreads[n], NULL);
-  finished = true;
-  return NULL;
 }
 
 // opens output data file
@@ -762,15 +758,7 @@ static bool GetBaselines()
     pthread_create(&gThreads[Datamap[j]], NULL, handle, (void*) Datamap[j]);
   }
 
-  // XXX what's the point of running a thread, then blocking until it finishes?
-  // Why not just call the function?
-  //                                  XXX munging an int into a void*!
-  pthread_create(&joinerThread, NULL, joiner, (void*)num_nonFanUSB);
-
-  while(!finished) sleep(1); // To be optimized -- never done for Double Chooz - needed?
-  finished = false;
-
-  pthread_join(joinerThread, NULL);
+  joiner(num_nonFanUSB);
 
   cout << "Joined all baseline threads!\n";
 
@@ -1609,13 +1597,7 @@ int main(int argc, char **argv)
           pthread_create(&gThreads[j], NULL, handle, (void*) j);
         }
 
-        pthread_create(&joinerThread, NULL, joiner, (void*) numUSB);
-
-        while(!finished) sleep(1); // To be optimized -- never done for
-                                   // Double Chooz -- needed?
-        finished = false;
-
-        pthread_join(joinerThread, NULL);
+        joiner(numUSB);
 
         cout << "Joined all main threads!\n";
 
