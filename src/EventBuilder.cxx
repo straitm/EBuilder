@@ -371,11 +371,11 @@ static int LoadAll()
   return 1;
 }
 
-static void BuildEvent(DataVector *OutDataVector,
-                       vector<int32_t> *OutIndexVector, int mydataFile)
+static void BuildEvent(const DataVector & OutDataVector,
+                       const vector<int32_t> & OutIndexVector, int mydataFile)
 {
-  DataVector::iterator CurrentOutDataVectorIt = OutDataVector->begin();
-  vector<int32_t>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
+  DataVector::const_iterator CurrentOutDataVectorIt = OutDataVector.begin();
+  vector<int32_t>::const_iterator CurrentOutIndexVectorIt = OutIndexVector.begin();
   OVEventHeader CurrEventHeader;
   OVDataPacketHeader CurrDataPacketHeader;
 
@@ -386,7 +386,7 @@ static void BuildEvent(DataVector *OutDataVector,
     exit(1);
   }
 
-  while( CurrentOutDataVectorIt != OutDataVector->end() ) {
+  while( CurrentOutDataVectorIt != OutDataVector.end() ) {
 
     if(CurrentOutDataVectorIt->size() < 7) {
       log_msg(LOG_CRIT, "Fatal Error in Build Event: Vector of "
@@ -398,13 +398,13 @@ static void BuildEvent(DataVector *OutDataVector,
     int32_t time_s = 0;
 
     // First packet in built event
-    if(CurrentOutDataVectorIt == OutDataVector->begin()) {
+    if(CurrentOutDataVectorIt == OutDataVector.begin()) {
       time_s = (CurrentOutDataVectorIt->at(1) << 24) +
                (CurrentOutDataVectorIt->at(2) << 16) +
                (CurrentOutDataVectorIt->at(3) <<  8) +
                 CurrentOutDataVectorIt->at(4);
       CurrEventHeader.SetTimeSec(time_s);
-      CurrEventHeader.SetNOVDataPackets(OutDataVector->size());
+      CurrEventHeader.SetNOVDataPackets(OutDataVector.size());
       const int nbs = write(mydataFile, &CurrEventHeader, sizeof(OVEventHeader));
 
       if (nbs != sizeof(OVEventHeader)){
@@ -602,13 +602,13 @@ static bool parse_options(int argc, char **argv)
   return false;
 }
 
-static void CalculatePedestal(DataVector* BaselineData, int **baseptr)
+static void CalculatePedestal(const DataVector & BaselineData, int **baseptr)
 {
   double baseline[maxModules][numChannels] = {};
   int counter[maxModules][numChannels] = {};
 
-  for(DataVector::iterator BaselineDataIt = BaselineData->begin();
-      BaselineDataIt != BaselineData->end();
+  for(DataVector::const_iterator BaselineDataIt = BaselineData.begin();
+      BaselineDataIt != BaselineData.end();
       BaselineDataIt++) {
 
     // Data Packets should have 7 + 2*num_hits elements
@@ -791,7 +791,7 @@ static bool GetBaselines()
   for(unsigned int i = 0; i < num_nonFanUSB; i++) {
     DataVector BaselineData;
     OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
-    CalculatePedestal(&BaselineData, baselines);
+    CalculatePedestal(BaselineData, baselines);
     OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
     const int usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
     if(!WriteBaselineTable(baselines, usb)) {
@@ -1722,7 +1722,7 @@ int main(int argc, char **argv)
           // Ignore gaps which have consist of fewer than 4 clock cycles
 
           ++EventCounter;
-          BuildEvent(&MinDataVector, &MinIndexVector, dataFile);
+          BuildEvent(MinDataVector, MinIndexVector, dataFile);
 
           MinDataVector.clear();
           MinIndexVector.clear();
