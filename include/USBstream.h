@@ -20,7 +20,7 @@ public:
   void SetIsFanUSB() { IsFanUSB = true; }
   void SetTOLUTC(uint64_t tolutc) { mytolutc=tolutc; }
   void SetOffset(int *off);
-  void SetBaseline(int **base);
+  void SetBaseline(const int base[64 /* maxModules */][64 /* numChannels */]);
 
   void Reset();
 
@@ -40,7 +40,7 @@ private:
   int mythresh;
   int myusb;
   int mynpmt;
-  int baseline[64][64]; // Data structure?
+  int baseline[64 /* maxModules */][64 /* numChannels */];
   int offset[64];
   int adj1[64];
   int adj2[64];

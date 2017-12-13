@@ -601,7 +601,8 @@ static bool parse_options(int argc, char **argv)
   return false;
 }
 
-static void CalculatePedestal(const DataVector & BaselineData, int **baseptr)
+static void CalculatePedestal(int baseptr[maxModules][numChannels],
+                              const DataVector & BaselineData)
 {
   double baseline[maxModules][numChannels] = {};
   int counter[maxModules][numChannels] = {};
@@ -638,16 +639,17 @@ static void CalculatePedestal(const DataVector & BaselineData, int **baseptr)
       // triggers?
       baseline[module][channel] = (baseline[module][channel]*
         counter[module][channel] + charge)/(counter[module][channel]+1);
-      counter[module][channel] = counter[module][channel] + 1;
+      counter[module][channel]++;
     }
   }
 
   for(int i = 0; i < maxModules; i++)
-    for( int j = 0; j < numChannels; j++)
-      *(*(baseptr+i) + j) = (int)baseline[i][j];
+    for(int j = 0; j < numChannels; j++)
+      baseptr[i][j] = (int)baseline[i][j];
 }
 
-static bool WriteBaselineTable(int **baseptr, int usb)
+static bool WriteBaselineTable(const int baseptr[maxModules][numChannels],
+                               const int usb)
 {
   return true; // XXX No database, so just pretend things are ok
 
@@ -762,19 +764,12 @@ static bool GetBaselines()
 
   cout << "Joined all baseline threads!\n";
 
-  // Build baseline tables
-  // XXX I think this can be replaced with a zeroed 2D array in one line
-  int **baselines = new int*[maxModules];
-  for(int i = 0; i<maxModules; i++) {
-    baselines[i] = new int[numChannels];
-    for(int j = 0; j<numChannels; j++)
-      *(*(baselines+i)+j) = 0;
-  }
+  int baselines[maxModules][numChannels] = { { } };
 
   for(unsigned int i = 0; i < num_nonFanUSB; i++) {
     DataVector BaselineData;
     OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
-    CalculatePedestal(BaselineData, baselines);
+    CalculatePedestal(baselines, BaselineData);
     OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
     const int usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
     if(!WriteBaselineTable(baselines, usb)) {
@@ -782,10 +777,6 @@ static bool GetBaselines()
       return false;
     }
   }
-
-  for(int i = 0; i<maxModules; i++)
-    delete [] baselines[i];
-  delete [] baselines;
 
   return true;
 }

@@ -78,18 +78,12 @@ void USBstream::SetThresh(int thresh, int threshtype)
 
 }
 
-void USBstream::SetBaseline(int **baseptr)
+void USBstream::SetBaseline(
+  const int baseptr[64 /* maxModules */][64 /* numChannels*/])
 {
-  for(int i = 0; i < 64; i++) {
-    for(int j = 0; j < 64; j++) {
-      if(*(*(baseptr+i)+j) > 0) {
-        baseline[i][j] = *(*(baseptr+i)+j);
-      }
-      else {
-        baseline[i][j] = 0;
-      }
-    }
-  }
+  for(int i = 0; i < 64; i++)
+    for(int j = 0; j < 64; j++)
+      baseline[i][j] = std::max(0, baseptr[i][j]);
 }
 
 void USBstream::GetBaselineData(DataVector *vec)
