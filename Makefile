@@ -7,10 +7,6 @@ TMPDIR  = ./tmp
 INCDIR =  ./include
 INC =  -I./include
 
-ROOTCFLAGS   := $(shell root-config --cflags)
-ROOTLDFLAGS  := $(shell root-config --ldflags)
-ROOTLIBS     := $(shell root-config --libs)
-
 PREFIX=/home/strait
 
 CXXFLAGS      = -O2 -Wunused -Wall -Wextra $(INC) \
@@ -18,9 +14,6 @@ CXXFLAGS      = -O2 -Wunused -Wall -Wextra $(INC) \
 LDFLAGS       = $(INC) # does nothing?
 SOFLAGS       = -shared
 
-CXXFLAGS     += $(ROOTCFLAGS)
-LDFLAGS      += $(ROOTLDFLAGS)
-LIBS          = $(ROOTLIBS)
 LIBS         += -L/usr/lib64/mysql -L$(PREFIX)/lib -lmysqlclient -lmysqlpp
 MAIN=EventBuilder.cxx
 TARGET=$(MAIN:%.cxx=$(BINDIR)/%)

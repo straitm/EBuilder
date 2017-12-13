@@ -22,7 +22,3 @@ convention b after checking that these belong to distinct USB streams. If it can
 find 5 files that fit this criterion, it looks for the newest run in the folder 1.
 
 Compile with "make".
-
-Known problems:
-  1. Does not delete or move binary files after processing them
-  2. May be a small memory leak preventing it from running for days continuously

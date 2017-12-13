@@ -6,15 +6,18 @@
 #include "USBstream.h"
 #include "USBstreamUtils.h"
 
-// XXX Is there a motivation to use ROOT's thread library and not a standard
-// one?  TThread is poorly documented, without even general explanation at
-// https://root.cern.ch/doc/master/classTThread.html
-#include "TThread.h"
-
+#include <stdio.h>
+#include <stdarg.h>
+#include <unistd.h>
+#include <pthread.h>
 #include <errno.h>
 #include <syslog.h>
 #include <algorithm>
 #include <sys/statvfs.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include <mysql++.h>
 
 using namespace std;
@@ -59,8 +62,8 @@ static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
 // Mutated as program runs
 static int OV_EB_State = 0;
 static bool finished=false; // Flag for joiner thread
-static TThread *gThreads[maxUSB]; // An array of threads to decode files
-static TThread *joinerThread; // Joiner thread for decoding
+static pthread_t gThreads[maxUSB]; // An array of threads to decode files
+static pthread_t joinerThread; // Joiner thread for decoding
 static int initial_delay = 0;
 static vector<string> files; // vector to hold file names
 
@@ -149,10 +152,10 @@ static void *joiner(void *ptr) // This thread joins the above threads
   unsigned long int nusb = (unsigned long int)ptr;
   if(nusb < numUSB)
     for(unsigned int n = 0; n < nusb; n++)
-      gThreads[Datamap[n]]->Join();
+      pthread_join(gThreads[Datamap[n]], NULL);
   else
     for(unsigned int n = 0; n < numUSB; n++)
-      gThreads[n]->Join();
+      pthread_join(gThreads[n], NULL);
   finished = true;
   return NULL;
 }
@@ -753,29 +756,21 @@ static bool GetBaselines()
 
   // Decode all files at once and load into memory
   // XXX Why does this use threads?  We can't go on until they're all done
-  // and threads does not speed it up.  Actually... since I don't know what
-  // a TThread is given its lack of docuementation, I don't know if that's
-  // true or not.
+  // and threads does not speed it up.
   for(unsigned int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
     printf("Starting Thread %d\n", Datamap[j]);
-    gThreads[Datamap[j]] =
-      new TThread(Form("gThreads%d", Datamap[j]), handle, (void*) Datamap[j]);
-    gThreads[Datamap[j]]->Run();
+    pthread_create(&gThreads[Datamap[j]], NULL, handle, (void*) Datamap[j]);
   }
 
   // XXX what's the point of running a thread, then blocking until it finishes?
   // Why not just call the function?
   //                                  XXX munging an int into a void*!
-  joinerThread = new TThread("joinerThread", joiner, (void*)num_nonFanUSB);
-  joinerThread->Run();
+  pthread_create(&joinerThread, NULL, joiner, (void*)num_nonFanUSB);
 
   while(!finished) sleep(1); // To be optimized -- never done for Double Chooz - needed?
   finished = false;
 
-  joinerThread->Join();
-
-  for(unsigned int k=0; k < num_nonFanUSB; k++) delete gThreads[Datamap[k]];
-  delete joinerThread;
+  pthread_join(joinerThread, NULL);
 
   cout << "Joined all baseline threads!\n";
 
@@ -1611,23 +1606,16 @@ int main(int argc, char **argv)
 
         for(unsigned int j=0; j<numUSB; j++) { // Load all files in at once
           printf("Starting Thread %d\n", j);
-          gThreads[j] = new TThread(Form("gThreads%d", j), handle, (void*) j);
-          gThreads[j]->Run();
+          pthread_create(&gThreads[j], NULL, handle, (void*) j);
         }
 
-        joinerThread = new TThread("joinerThread", joiner, (void*) numUSB);
-        joinerThread->Run();
+        pthread_create(&joinerThread, NULL, joiner, (void*) numUSB);
 
         while(!finished) sleep(1); // To be optimized -- never done for
                                    // Double Chooz -- needed?
         finished = false;
 
-        joinerThread->Join();
-
-        for(unsigned int k=0; k<numUSB; k++)
-          if(gThreads[k])
-            delete gThreads[k];
-        if(joinerThread) delete joinerThread;
+        pthread_join(joinerThread, NULL);
 
         cout << "Joined all main threads!\n";
 
