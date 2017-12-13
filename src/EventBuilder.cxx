@@ -1676,28 +1676,16 @@ int main(int argc, char **argv)
     // index of minimum event added to USB stream
     int MinIndex=0;
     for(unsigned int i=0; i < numUSB; i++) {
-      //                  This looks like an elaborate
-      //             test for CurrentDataVector[i].empty().
-      //                    MinIndex ends up getting
-      //
-      //                    set to whichever is the
-      //                  last CurrentDataVector to be
-      //                     empty, or the last if
-      //
-      //                    none are empty, and all
-      //                     the iterators are set
-      //                          to begin().
+      // MinIndex is set to the last CurrentDataVector that's empty,
+      // or zero if none are empty.
       CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
-      if(CurrentDataVectorIt[i]==CurrentDataVector[i].end()) MinIndex = i;
+      if(CurrentDataVector[i].empty()) MinIndex = i;
     }
     MinDataVector.assign(ExtraDataVector.begin(), ExtraDataVector.end());
     MinIndexVector.assign(ExtraIndexVector.begin(), ExtraIndexVector.end());
 
-    //                         Ok, so this is an
-    //                  elaborate test for whether all
-    //                       CurrentDataVectors are
-    //
-    //                      non-empty up to numUSB.
+    // This is an elaborate test for whether all CurrentDataVectors are
+    // non-empty up to numUSB.
     while( CurrentDataVectorIt[MinIndex]!=CurrentDataVector[MinIndex].end() ) {
       // Until 1 USB stream finishes timestamp
 
