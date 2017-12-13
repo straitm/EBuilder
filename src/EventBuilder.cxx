@@ -374,21 +374,10 @@ static int LoadAll()
 static void BuildEvent(DataVector *OutDataVector,
                        vector<int32_t> *OutIndexVector, int mydataFile)
 {
-
-  int nbs, nwords, module_local, usb;
-  int16_t module;
-  int8_t channel;
-  int16_t charge;
-  int64_t time_s_hi = 0;
-  int64_t time_s_lo = 0;
-  int64_t time_16ns_hi = 0;
-  int64_t time_16ns_lo = 0;
   DataVector::iterator CurrentOutDataVectorIt = OutDataVector->begin();
   vector<int32_t>::iterator CurrentOutIndexVectorIt = OutIndexVector->begin();
   OVEventHeader CurrEventHeader;
   OVDataPacketHeader CurrDataPacketHeader;
-
-  int cnt=0;
 
   if(mydataFile <= 0) {
     log_msg(LOG_CRIT, "Fatal Error in Build Event. Invalid file "
@@ -406,13 +395,17 @@ static void BuildEvent(DataVector *OutDataVector,
       exit(1);
     }
 
+    int32_t time_s = 0;
+
     // First packet in built event
     if(CurrentOutDataVectorIt == OutDataVector->begin()) {
-      time_s_hi = (CurrentOutDataVectorIt->at(1) << 8) + CurrentOutDataVectorIt->at(2);
-      time_s_lo = (CurrentOutDataVectorIt->at(3) << 8) + CurrentOutDataVectorIt->at(4);
-      CurrEventHeader.SetTimeSec(time_s_hi*0x10000 + time_s_lo);
+      time_s = (CurrentOutDataVectorIt->at(1) << 24) +
+               (CurrentOutDataVectorIt->at(2) << 16) +
+               (CurrentOutDataVectorIt->at(3) <<  8) +
+                CurrentOutDataVectorIt->at(4);
+      CurrEventHeader.SetTimeSec(time_s);
       CurrEventHeader.SetNOVDataPackets(OutDataVector->size());
-      nbs = write(mydataFile, &CurrEventHeader, sizeof(OVEventHeader));
+      const int nbs = write(mydataFile, &CurrEventHeader, sizeof(OVEventHeader));
 
       if (nbs != sizeof(OVEventHeader)){
         log_msg(LOG_CRIT, "Fatal Error: Cannot write event header to disk!\n");
@@ -421,15 +414,16 @@ static void BuildEvent(DataVector *OutDataVector,
       } // To be optimized
     }
 
-    nwords = (CurrentOutDataVectorIt->at(0) & 0xff) - 1;
-    module_local = (CurrentOutDataVectorIt->at(0) >> 8) & 0x7f;
+    const int nwords = (CurrentOutDataVectorIt->at(0) & 0xff) - 1;
+    const int module_local = (CurrentOutDataVectorIt->at(0) >> 8) & 0x7f;
     // EBuilder temporary internal mapping is decoded back to pmtbaord_u from
     // MySQL table
-    usb = OVUSBStream[*CurrentOutIndexVectorIt].GetUSB();
-    module = PMTUniqueMap[usb*1000+module_local];
+    const int usb = OVUSBStream[*CurrentOutIndexVectorIt].GetUSB();
+    const int16_t module = PMTUniqueMap[usb*1000+module_local];
     int8_t type = CurrentOutDataVectorIt->at(0) >> 15;
-    time_16ns_hi = CurrentOutDataVectorIt->at(5);
-    time_16ns_lo = CurrentOutDataVectorIt->at(6);
+    const int32_t time_16ns_hi = CurrentOutDataVectorIt->at(5);
+    const int32_t time_16ns_lo = CurrentOutDataVectorIt->at(6);
+    const int64_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
 
     // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
     // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows in 62.5 MHz
@@ -437,7 +431,7 @@ static void BuildEvent(DataVector *OutDataVector,
     if( (time_16ns_hi >> (SYNC_PULSE_CLK_COUNT_PERIOD_LOG2 - 16)) ) {
       if(!overflow[module]) {
         log_msg(LOG_WARNING, "Module %d missed sync pulse near "
-          "time stamp %ld\n", module, time_s_hi*0x10000+time_s_lo);
+          "time stamp %ld\n", module, time_s);
         overflow[module] = true;
         maxcount_16ns_lo[module] = time_16ns_lo;
         maxcount_16ns_hi[module] = time_16ns_hi;
@@ -476,17 +470,16 @@ static void BuildEvent(DataVector *OutDataVector,
          * at expected clock count */
         // Firmware only allows this for special sync pulse packets in trigger box
         if(length == 32) {
-          const int64_t time_16ns_sync = time_16ns_hi*0x10000+time_16ns_lo;
           const int64_t expected_time_16ns_sync =
             (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
           const int64_t expected_time_16ns_sync_offset =
             *(PMTOffsets[usb]+module_local);
 
           if(expected_time_16ns_sync - expected_time_16ns_sync_offset
-             != time_16ns_sync)
+             != time_16ns)
             log_msg(LOG_ERR, "Trigger box module %d received sync pulse at "
               "clock count %ld instead of expected clock count (%ld).\n",
-              module, time_16ns_sync, expected_time_16ns_sync);
+              module, time_16ns, expected_time_16ns_sync);
         }
       }
     }
@@ -499,9 +492,9 @@ static void BuildEvent(DataVector *OutDataVector,
     CurrDataPacketHeader.SetNHits(length);
     CurrDataPacketHeader.SetModule(module);
     CurrDataPacketHeader.SetType(type);
-    CurrDataPacketHeader.SetTime16ns(time_16ns_hi*0x10000 + time_16ns_lo);
+    CurrDataPacketHeader.SetTime16ns(time_16ns);
 
-    nbs = write(mydataFile, &CurrDataPacketHeader, sizeof(OVDataPacketHeader));
+    const int nbs = write(mydataFile, &CurrDataPacketHeader, sizeof(OVDataPacketHeader));
     if (nbs != sizeof(OVDataPacketHeader)){
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header to disk!\n");
       write_ebretval(-1);
@@ -512,19 +505,17 @@ static void BuildEvent(DataVector *OutDataVector,
 
       for(int m = 0; m <= length - 1; m++) { //Loop over all hits in the packet
 
-        channel = (int8_t)CurrentOutDataVectorIt->at(8+2*m);
-        charge = (int16_t)CurrentOutDataVectorIt->at(7+2*m);
+        const int8_t channel = CurrentOutDataVectorIt->at(8+2*m);
+        const int16_t charge = CurrentOutDataVectorIt->at(7+2*m);
         OVHitData CurrHit;
         CurrHit.SetHit(channel, charge);
 
-        nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
+        const int nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
         if (nbs != sizeof(OVHitData)){
           log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
           write_ebretval(-1);
           exit(1);
         } // To be optimized -- never done for Double Chooz.  Needed?
-
-        cnt++;
       }
     }
     else { // PMTBOARD LATCH PACKET OR TRIGGER BOX PACKET
@@ -536,14 +527,12 @@ static void BuildEvent(DataVector *OutDataVector,
             OVHitData CurrHit;
             CurrHit.SetHit(16*(nwords-4-w) + n, 1);
 
-            nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
+            const int nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
             if (nbs != sizeof(OVHitData)){
               log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
               write_ebretval(-1);
               exit(1);
             } // To be optimized -- never done for Double Chooz.  Needed?
-
-            cnt++;
           }
           temp >>=1;
         }
