@@ -410,7 +410,6 @@ static void BuildEvent(DataVector *OutDataVector,
     if(CurrentOutDataVectorIt == OutDataVector->begin()) {
       time_s_hi = (CurrentOutDataVectorIt->at(1) << 8) + CurrentOutDataVectorIt->at(2);
       time_s_lo = (CurrentOutDataVectorIt->at(3) << 8) + CurrentOutDataVectorIt->at(4);
-      memset(&CurrEventHeader, 0, sizeof(OVEventHeader));
       CurrEventHeader.SetTimeSec(time_s_hi*0x10000 + time_s_lo);
       CurrEventHeader.SetNOVDataPackets(OutDataVector->size());
       nbs = write(mydataFile, &CurrEventHeader, sizeof(OVEventHeader));
