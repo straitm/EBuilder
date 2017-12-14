@@ -8,7 +8,6 @@
 
 #include <stdio.h>
 #include <stdarg.h>
-#include <unistd.h>
 #include <pthread.h>
 #include <errno.h>
 #include <syslog.h>
@@ -26,6 +25,8 @@ using namespace std;
 
 enum RunMode {kNormal, kRecovery, kReprocess};
 enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
+enum packet_type { kOVR_DISCRIM = 0, kOVR_ADC = 1, kOVR_TRIGBOX = 2};
+
 
 // Just little convenience structs for reading from the database
 struct usb_sbop{
@@ -375,11 +376,9 @@ static void BuildEvent(const DataVector & OutDataVector,
 {
   DataVector::const_iterator CurrentOutDataVectorIt = OutDataVector.begin();
   vector<int32_t>::const_iterator CurrentOutIndexVectorIt = OutIndexVector.begin();
-  OVEventHeader CurrEventHeader;
-  OVDataPacketHeader CurrDataPacketHeader;
 
   if(mydataFile <= 0) {
-    log_msg(LOG_CRIT, "Fatal Error in Build Event. Invalid file "
+    log_msg(LOG_CRIT, "Fatal Error in BuildEvent(). Invalid file "
       "handle for previously opened data file!\n");
     write_ebretval(-1);
     exit(1);
@@ -402,15 +401,15 @@ static void BuildEvent(const DataVector & OutDataVector,
                (CurrentOutDataVectorIt->at(2) << 16) +
                (CurrentOutDataVectorIt->at(3) <<  8) +
                 CurrentOutDataVectorIt->at(4);
-      CurrEventHeader.SetTimeSec(time_s);
-      CurrEventHeader.SetNOVDataPackets(OutDataVector.size());
-      const int nbs = write(mydataFile, &CurrEventHeader, sizeof(OVEventHeader));
+      OVEventHeader evheader;
+      evheader.time_sec = time_s;
+      evheader.n_ov_data_packets = OutDataVector.size();
 
-      if (nbs != sizeof(OVEventHeader)){
-        log_msg(LOG_CRIT, "Fatal Error: Cannot write event header to disk!\n");
+      if(!evheader.writeout(mydataFile)){
+        log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
         write_ebretval(-1);
         exit(1);
-      } // To be optimized
+      }
     }
 
     const int nwords = (CurrentOutDataVectorIt->at(0) & 0xff) - 1;
@@ -422,7 +421,7 @@ static void BuildEvent(const DataVector & OutDataVector,
     int8_t type = CurrentOutDataVectorIt->at(0) >> 15;
     const int32_t time_16ns_hi = CurrentOutDataVectorIt->at(5);
     const int32_t time_16ns_lo = CurrentOutDataVectorIt->at(6);
-    const int64_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
+    const uint32_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
 
     // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
     // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows in 62.5 MHz
@@ -453,7 +452,7 @@ static void BuildEvent(const DataVector & OutDataVector,
     // For latch packets, compute the number of hits
     int k = 0;
     int8_t length = 0;
-    if(type == 0) {
+    if(type == kOVR_DISCRIM) {
       for(int w = 0; w < nwords - 3 ; w++) { // fan-in packets have length=6
         int temp = CurrentOutDataVectorIt->at(7+w) + 0;
         for(int n = 0; n < 16; n++) {
@@ -463,7 +462,7 @@ static void BuildEvent(const DataVector & OutDataVector,
       }
       length = k;
       if(nwords == 5) { // trigger box packet
-        type = 2; // Set trigger box packet type
+        type = kOVR_TRIGBOX; // Set trigger box packet type
 
         /* Sync Pulse Diagnostic Info: Throw error if sync pulse does not come
          * at expected clock count */
@@ -488,33 +487,30 @@ static void BuildEvent(const DataVector & OutDataVector,
       length = (CurrentOutDataVectorIt->size()-7)/2;
     }
 
-    CurrDataPacketHeader.SetNHits(length);
-    CurrDataPacketHeader.SetModule(module);
-    CurrDataPacketHeader.SetType(type);
-    CurrDataPacketHeader.SetTime16ns(time_16ns);
+    OVDataPacketHeader moduleheader;
+    moduleheader.nHits = length;
+    moduleheader.module = module;
+    moduleheader.dataType = type;
+    moduleheader.time16ns = time_16ns;
 
-    const int nbs = write(mydataFile, &CurrDataPacketHeader, sizeof(OVDataPacketHeader));
-    if (nbs != sizeof(OVDataPacketHeader)){
-      log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header to disk!\n");
+    if(!moduleheader.writeout(mydataFile)){
+      log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header!\n");
       write_ebretval(-1);
       exit(1);
-    } // To be optimize -- never done for Double Chooz.  Needed?
+    }
 
-    if(type == 1) { // PMTBOARD ADC Packet
+    if(type == kOVR_ADC) { // PMTBOARD ADC Packet
 
-      for(int m = 0; m <= length - 1; m++) { //Loop over all hits in the packet
+      for(int m = 0; m < length; m++) { //Loop over all hits in the packet
+        OVHitData hit;
+        hit.channel = CurrentOutDataVectorIt->at(8+2*m);
+        hit.charge = CurrentOutDataVectorIt->at(7+2*m);
 
-        const int8_t channel = CurrentOutDataVectorIt->at(8+2*m);
-        const int16_t charge = CurrentOutDataVectorIt->at(7+2*m);
-        OVHitData CurrHit;
-        CurrHit.SetHit(channel, charge);
-
-        const int nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
-        if (nbs != sizeof(OVHitData)){
-          log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
+        if(!hit.writeout(mydataFile)){
+          log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
           write_ebretval(-1);
           exit(1);
-        } // To be optimized -- never done for Double Chooz.  Needed?
+        }
       }
     }
     else { // PMTBOARD LATCH PACKET OR TRIGGER BOX PACKET
@@ -523,15 +519,15 @@ static void BuildEvent(const DataVector & OutDataVector,
         int temp = CurrentOutDataVectorIt->at(7+w) + 0;
         for(int n = 0; n < 16; n++) {
           if(temp & 1) {
-            OVHitData CurrHit;
-            CurrHit.SetHit(16*(nwords-4-w) + n, 1);
+            OVHitData hit;
+            hit.channel = 16*(nwords-4-w) + n;
+            hit.charge = 1;
 
-            const int nbs = write(mydataFile, &CurrHit, sizeof(OVHitData));
-            if (nbs != sizeof(OVHitData)){
-              log_msg(LOG_CRIT, "Fatal Error: Cannot write hit to disk!\n");
+            if(!hit.writeout(mydataFile)){
+              log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
               write_ebretval(-1);
               exit(1);
-            } // To be optimized -- never done for Double Chooz.  Needed?
+            }
           }
           temp >>=1;
         }
@@ -618,7 +614,7 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
     const int module = (BaselineDataIt->at(0) >> 8) & 0x7f;
     const int type = BaselineDataIt->at(0) >> 15;
 
-    if(!type) continue;
+    if(type != kOVR_ADC) continue;
 
     if(module > maxModules){
       log_msg(LOG_CRIT, "Fatal Error: Module number requested "
@@ -1465,8 +1461,12 @@ static bool read_stop_time()
 
 static bool write_endofrun_block(string myfname, int data_fd)
 {
+  // XXX Why does this part of the code, in particular, have a retry loop
+  // for writing to the file?
   cout << "Trying to write end of run block" << endl;
   if(EBRunMode == kRecovery || SubRunCounter % timestampsperoutput == 0) {
+    printf("Recovery or SubRunCounter%%timestampsperoutput == 0, "
+           "whatever that means!\n");
     data_fd = open_file(myfname);
     if(data_fd <= 0) {
       log_msg(LOG_ERR, "Cannot open file %s to write "
@@ -1475,14 +1475,12 @@ static bool write_endofrun_block(string myfname, int data_fd)
     }
   }
 
-  OVEventHeader CurrEventHeader;
-  CurrEventHeader.SetTimeSec(0);
-  CurrEventHeader.SetNOVDataPackets(-99);
-
-  if(write(data_fd, &CurrEventHeader, sizeof(OVEventHeader)) != sizeof(OVEventHeader)){
+  uint32_t end = 0x53544F50; // "STOP"
+  uint32_t nend = htonl(end);
+  if(sizeof nend != write(data_fd, &nend, sizeof nend)){
     log_msg(LOG_ERR, "End of run write error\n");
     return false;
-  } // To be optimized
+  }
 
   if(close(data_fd) < 0) log_msg(LOG_ERR, "Could not close output data file\n");
 
@@ -1564,7 +1562,7 @@ int main(int argc, char **argv)
             return 127;
           }
           cout << "Files are not ready...\n";
-          goto out; // Let's try escaping here and see if we can get files built
+          goto out; // XXX Escape here and we can get files built
           if((int)difftime(time(0), timeout) > ENDTIME &&
              (read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME)) {
             while(!write_endofrun_block(fname, dataFile)) sleep(1);

@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <deque>
+#include <arpa/inet.h> // For htons, htonl
 #include <sys/stat.h>
 #include <string.h>
 #include <stdint.h>
@@ -83,85 +84,65 @@ private:
 };
 
 struct OVHitData {
-
-  OVHitData()
-  { // See comments in OVEventHeader
-    memset(this, 0, sizeof(*this));
-    // "HIT DATA"
-    compatibility = 0x4154414420544948;
-  }
-
-  void SetHit(const int8_t channel_, const int16_t charge_)
+  bool writeout(const int fd)
   {
-    channel = channel_;
-    charge = charge_;
+    const uint8_t magic = 'H';
+    if(1 != write(fd, &magic, 1)) return false;
+
+    if(1 != write(fd, &channel, 1)) return false;
+
+    const uint16_t ncharge = htons(charge);
+    if(sizeof ncharge != write(fd, &ncharge, sizeof ncharge)) return false;
+
+    return true;
   }
 
-  uint64_t compatibility;
-  int8_t channel;
+  uint16_t magic;
+  uint8_t channel;
   int16_t charge;
 };
 
 struct OVEventHeader {
+  bool writeout(const int fd)
+  {
+    const uint16_t magic = htons(0x4556); // "EV"
+    if(sizeof magic != write(fd, &magic, sizeof magic)) return false;
 
-  OVEventHeader()
-  { // See comments in OVEventHeader
-    memset(this, 0, sizeof(*this));
-    // "EVENT HD"
-    compatibility = 0x444820544E455645;
+    const uint16_t nnov = htons(n_ov_data_packets);
+    if(sizeof nnov != write(fd, &nnov, sizeof nnov)) return false;
+
+    const uint32_t ntime_sec = htonl(time_sec);
+    if(sizeof ntime_sec != write(fd, &ntime_sec, sizeof ntime_sec)) return false;
+
+    return true;
   }
 
-  void SetNOVDataPackets(const int8_t npackets) { n_ov_data_packets = npackets; }
-  void SetTimeSec(const uint32_t time_s) {  time_sec = time_s; }
-
-  int8_t GetNOVDataPackets() const { return n_ov_data_packets; }
-  uint32_t GetTimeSec() const { return time_sec; }
-
-  // When I found this class, it had a virtual destructor and was being
-  // write()ten and read() to a file in its entirety.  This means that the
-  // vtable pointer went to the file and then trashed the vtable pointer in the
-  // read()ing program.  Not good, except that because they were compiled with
-  // the same version of gcc, maybe it was the same value?  Or maybe it simply
-  // was never dereferenced because no virtual functions were ever called?  In
-  // any case, it primarily is causing me grief because it writes uninteresting
-  // and unpredictable values into the output file, which makes it hard to
-  // check whether the program is producing output that matches my reference
-  // output file from Camillo.  To keep the layout the same, for now I am
-  // writing out the same length of meaningful text.  I am *not* going to be reading
-  // these files back in with the Double Chooz "Dogsifier", so there's no
-  // reason to retain this compatibility after initial testing.
-  uint64_t compatibility;
-  int8_t n_ov_data_packets;
-  uint64_t time_sec;
+  uint16_t n_ov_data_packets;
+  uint32_t time_sec;
 };
 
 struct OVDataPacketHeader {
+  bool writeout(const int fd)
+  {
+    const uint16_t magic = htons(0x444D); // "MD"
+    if(sizeof(magic) != write(fd, &magic, sizeof magic)) return false;
 
-  OVDataPacketHeader()
-  { // See comments in OVEventHeader
-    memset(this, 0, sizeof(*this));
-    // "PACKETHD"
-    compatibility = 0x444854454B434150;
+    if(1 != write(fd, &nHits, 1)) return false;
+    if(1 != write(fd, &dataType, 1)) return false;
+
+    const uint16_t nmodule = htons(module);
+    if(sizeof(nmodule) != write(fd, &nmodule, sizeof nmodule)) return false;
+
+    const uint32_t ntime16ns = htonl(time16ns);
+    if(sizeof(ntime16ns) != write(fd, &ntime16ns, sizeof ntime16ns)) return false;
+
+    return true;
   }
 
-  void SetNHits(int8_t nh) { fNHits = nh; }
-  void SetModule(int16_t mod) { fModule = mod; }
-  void SetType(int8_t type) { fDataType = type; }
-  void SetTime16ns(int64_t time_16ns) { fTime16ns = time_16ns; }
-
-  int8_t GetNHits() const { return fNHits; }
-  int16_t GetModule() const { return fModule; }
-  int8_t GetType() const { return fDataType; }
-  int64_t GetTime16ns() const { return fTime16ns; }
-
-private:
-
-  uint64_t compatibility;
-
-  int8_t fNHits;
-  int8_t fDataType;
-  int16_t fModule;
-  int64_t fTime16ns;
+  uint8_t nHits;
+  uint8_t dataType;
+  uint16_t module;
+  uint32_t time16ns; // Was int64_t, but I think is always {0..0xffffffff}
 };
 
 #endif

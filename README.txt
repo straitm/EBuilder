@@ -22,3 +22,111 @@ convention b after checking that these belong to distinct USB streams. If it can
 find 5 files that fit this criterion, it looks for the newest run in the folder 1.
 
 Compile with "make".
+
+================================================================================
+============================== Output file format ==============================
+================================================================================
+
+As of 2017-12-13 this is subject to change.
+
+The output file consists of a series of events followed by an end-of-run
+marker.  Events consist of one or more module packets.  Module packets consist
+of one or more hits from a single module.
+
+All data is stored in big endian (a.k.a. network) format.
+
+The format of an event is:
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |  Magic number = 0x4556 = "EV" |    Number of module packets   |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                           Time stamp                          |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |               .         module packets        .               |
+   |               .               .               .               |
+
+  Number of module packets: Unsigned 16 bit integer.
+
+    It is not expected to be greater than 0xff, but it is convenient to have
+    all magic numbers be 16 bits and to align things to 32 bits.
+
+    TODO: I am not sure whether the number of module packets is always equal to
+    the number of modules with hits, or if they can be repeated in the case
+    where we string together a long event.
+
+  Time stamp: Unsigned 32 bit integer.
+
+    Equal to the Unix time stamp. The Unix time stamp itself is signed.
+    However, as we do not expect to take any data prior to 1 Jan 1970, this is
+    irrelevant.  You may use the first bit to allow data taking beyond 19 Jan
+    2038, 3:14:08 UTC (until 2106, when that too will overflow).
+
+    Note that Unix time stamps REPEAT in the case of a positive leap second
+    (common!) and SKIP in the case of a negative leap second (none so far, but
+    totally possible).  Really.  They are not a very good time stamp, so we
+    need to keep an eye on potential problems related to this.
+
+The format of an end-of-run marker is:
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |              Magic number = 0x53544F50 = "STOP"               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+
+The format of a module packet is:
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |  Magic number = 0x4D44 = "MD" | Count of hits |   Data type   |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |         Module number         |           Time stamp          |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     Time stamp (continued)    |               .               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+               .               |
+   |               .              hits             .               |
+   |               .               .               .               |
+
+  Count of hits: Unsigned 8 bit integer.
+
+  Data type: Unsigned 8 bit integer.
+
+     0 = kOVR_DISCRIM
+     1 = kOVR_ADC
+     2 = kOVR_TRIGBOX
+
+     TODO: What do these mean?  Are they relevant?  Is it always 1?
+
+  Module number: Unsigned 16 bit integer
+
+    TODO: Do we expect to have more than 256 modules?
+
+  Time stamp: Unsigned 32 bit integer
+
+    Number of 16ns ticks since last sync pulse.  Shouldn't usually be more than
+    2^29.
+
+The format of a hit is:
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |  Magic number |    Channel    |             Charge            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+  Magic number: 0x48 = "H"
+
+  Channel number: Unsigned 8 bit integer
+
+    Actually only uses 5 bits (0-63).
+
+  Charge: *Signed* 16 bit integer
+
+    Stored in two's complement.  Represents a baseline-subtracted 12-bit ADC
+    value.  So we could store this in 13 bits, but there's no great motivation
+    to pack the data so closely, especially because the minimum size of a hit
+    is 18 bits, which I would tend to pad out to 32 anyway.
