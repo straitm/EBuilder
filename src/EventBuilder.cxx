@@ -431,13 +431,9 @@ static void BuildEvent(const DataVector & OutDataVector,
         log_msg(LOG_WARNING, "Module %d missed sync pulse near "
           "time stamp %ld\n", module, time_s);
         overflow[module] = true;
-        maxcount_16ns_lo[module] = time_16ns_lo;
-        maxcount_16ns_hi[module] = time_16ns_hi;
       }
-      else {
-        maxcount_16ns_lo[module] = time_16ns_lo;
-        maxcount_16ns_hi[module] = time_16ns_hi;
-      }
+      maxcount_16ns_lo[module] = time_16ns_lo;
+      maxcount_16ns_hi[module] = time_16ns_hi;
     }
     else {
       if(overflow[module]) {
@@ -449,46 +445,16 @@ static void BuildEvent(const DataVector & OutDataVector,
       }
     }
 
-    // For latch packets, compute the number of hits
-    int k = 0;
-    int8_t length = 0;
     if(type == kOVR_DISCRIM) {
-      for(int w = 0; w < nwords - 3 ; w++) { // fan-in packets have length=6
-        int temp = CurrentOutDataVectorIt->at(7+w) + 0;
-        for(int n = 0; n < 16; n++) {
-          if(temp & 1) k++;
-          temp >>= 1;
-        }
-      }
-      length = k;
-      if(nwords == 5) { // trigger box packet
-        type = kOVR_TRIGBOX; // Set trigger box packet type
-
-        /* Sync Pulse Diagnostic Info: Throw error if sync pulse does not come
-         * at expected clock count */
-        // Firmware only allows this for special sync pulse packets in trigger box
-        if(length == 32) {
-          const int64_t expected_time_16ns_sync =
-            (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) - 1;
-          const int64_t expected_time_16ns_sync_offset =
-            *(PMTOffsets[usb]+module_local);
-
-          if(expected_time_16ns_sync - expected_time_16ns_sync_offset
-             != time_16ns)
-            log_msg(LOG_ERR, "Trigger box module %d received sync pulse at "
-              "clock count %ld instead of expected clock count (%ld).\n",
-              module, time_16ns, expected_time_16ns_sync);
-        }
-      }
-    }
-    else {
-      // XXX Magic here.  What is 7?  Why divide by 2?  Also it's a little
-      // scary that length overflows at 128. Had we better check for that?
-      length = (CurrentOutDataVectorIt->size()-7)/2;
+      log_msg(LOG_CRIT, "Fatal: Got a discriminator packet. Not supported!\n");
+      write_ebretval(-1);
+      exit(1);
     }
 
     OVDataPacketHeader moduleheader;
-    moduleheader.nHits = length;
+    // XXX Magic here.  What is 7?  Why divide by 2?  Also it's a little
+    // scary that length overflows at 128. Had we better check for that?
+    moduleheader.nHits = (CurrentOutDataVectorIt->size()-7)/2;
     moduleheader.module = module;
     moduleheader.dataType = type;
     moduleheader.time16ns = time_16ns;
@@ -501,7 +467,7 @@ static void BuildEvent(const DataVector & OutDataVector,
 
     if(type == kOVR_ADC) { // PMTBOARD ADC Packet
 
-      for(int m = 0; m < length; m++) { //Loop over all hits in the packet
+      for(int m = 0; m < moduleheader.nHits; m++) {
         OVHitData hit;
         hit.channel = CurrentOutDataVectorIt->at(8+2*m);
         hit.charge = CurrentOutDataVectorIt->at(7+2*m);
@@ -513,8 +479,7 @@ static void BuildEvent(const DataVector & OutDataVector,
         }
       }
     }
-    else { // PMTBOARD LATCH PACKET OR TRIGGER BOX PACKET
-
+    else { // trigger box packet
       for(int w = 0; w < nwords-3 ; w++) {
         int temp = CurrentOutDataVectorIt->at(7+w) + 0;
         for(int n = 0; n < 16; n++) {
