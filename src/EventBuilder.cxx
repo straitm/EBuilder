@@ -19,7 +19,9 @@
 
 #include <mysql++.h>
 
-using namespace std;
+using std::vector;
+using std::string;
+using std::map;
 
 #define BUFSIZE 1024
 
@@ -201,7 +203,7 @@ static void check_status()
 {
   static int Ddelay = 0;
   // Performance monitor
-  cout << "Found " << files.size() << " files." << endl;
+  log_msg(LOG_INFO, "Found %u files.\n", (unsigned int)files.size());
   int f_delay = (int)(latency*files.size()/numUSB/20);
   if(f_delay != OV_EB_State) {
     if(f_delay > OV_EB_State) {
@@ -371,56 +373,53 @@ static int LoadAll()
   return 1;
 }
 
-static void BuildEvent(const DataVector & OutDataVector,
-                       const vector<int32_t> & OutIndexVector, int mydataFile)
+static void BuildEvent(const DataVector & in_packets,
+                       const vector<int32_t> & OutIndex, const int fd)
 {
-  DataVector::const_iterator CurrentOutDataVectorIt = OutDataVector.begin();
-  vector<int32_t>::const_iterator CurrentOutIndexVectorIt = OutIndexVector.begin();
-
-  if(mydataFile <= 0) {
+  if(fd <= 0) {
     log_msg(LOG_CRIT, "Fatal Error in BuildEvent(). Invalid file "
       "handle for previously opened data file!\n");
     write_ebretval(-1);
     exit(1);
   }
 
-  while( CurrentOutDataVectorIt != OutDataVector.end() ) {
+  if(in_packets.empty()){
+    log_msg(LOG_WARNING, "Got empty data in BuildEvent(). Trying to continue.\n");
+    return;
+  }
 
-    if(CurrentOutDataVectorIt->size() < 7) {
-      log_msg(LOG_CRIT, "Fatal Error in Build Event: Vector of "
-        "data found with too few words.\n");
+  const std::vector<int32_t> & firstpacket = in_packets[0];
+  const int32_t time_s = (firstpacket.at(1) << 24) + (firstpacket.at(2) << 16) +
+                         (firstpacket.at(3) <<  8) +  firstpacket.at(4);
+  OVEventHeader evheader;
+  evheader.time_sec = time_s;
+  evheader.n_ov_data_packets = in_packets.size();
+
+  if(!evheader.writeout(fd)){
+    log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
+    write_ebretval(-1);
+    exit(1);
+  }
+
+  for(unsigned int packeti = 0; packeti < in_packets.size(); packeti++){
+    const std::vector<int32_t> & packet = in_packets[packeti];
+
+    if(packet.size() < 7) {
+      log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < 7\n",
+         (unsigned int) packet.size());
       write_ebretval(-1);
       exit(1);
     }
 
-    int32_t time_s = 0;
-
-    // First packet in built event
-    if(CurrentOutDataVectorIt == OutDataVector.begin()) {
-      time_s = (CurrentOutDataVectorIt->at(1) << 24) +
-               (CurrentOutDataVectorIt->at(2) << 16) +
-               (CurrentOutDataVectorIt->at(3) <<  8) +
-                CurrentOutDataVectorIt->at(4);
-      OVEventHeader evheader;
-      evheader.time_sec = time_s;
-      evheader.n_ov_data_packets = OutDataVector.size();
-
-      if(!evheader.writeout(mydataFile)){
-        log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
-        write_ebretval(-1);
-        exit(1);
-      }
-    }
-
-    const int nwords = (CurrentOutDataVectorIt->at(0) & 0xff) - 1;
-    const int module_local = (CurrentOutDataVectorIt->at(0) >> 8) & 0x7f;
+    const int nwords = (packet.at(0) & 0xff) - 1;
+    const int module_local = (packet.at(0) >> 8) & 0x7f;
     // EBuilder temporary internal mapping is decoded back to pmtbaord_u from
     // MySQL table
-    const int usb = OVUSBStream[*CurrentOutIndexVectorIt].GetUSB();
+    const int usb = OVUSBStream[OutIndex[packeti]].GetUSB();
     const int16_t module = PMTUniqueMap[usb*1000+module_local];
-    int8_t type = CurrentOutDataVectorIt->at(0) >> 15;
-    const int32_t time_16ns_hi = CurrentOutDataVectorIt->at(5);
-    const int32_t time_16ns_lo = CurrentOutDataVectorIt->at(6);
+    const int8_t type = packet.at(0) >> 15;
+    const int32_t time_16ns_hi = packet.at(5);
+    const int32_t time_16ns_lo = packet.at(6);
     const uint32_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
 
     // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
@@ -454,12 +453,12 @@ static void BuildEvent(const DataVector & OutDataVector,
     OVDataPacketHeader moduleheader;
     // XXX Magic here.  What is 7?  Why divide by 2?  Also it's a little
     // scary that length overflows at 128. Had we better check for that?
-    moduleheader.nHits = (CurrentOutDataVectorIt->size()-7)/2;
+    moduleheader.nHits = (packet.size()-7)/2;
     moduleheader.module = module;
     moduleheader.dataType = type;
     moduleheader.time16ns = time_16ns;
 
-    if(!moduleheader.writeout(mydataFile)){
+    if(!moduleheader.writeout(fd)){
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header!\n");
       write_ebretval(-1);
       exit(1);
@@ -469,10 +468,10 @@ static void BuildEvent(const DataVector & OutDataVector,
 
       for(int m = 0; m < moduleheader.nHits; m++) {
         OVHitData hit;
-        hit.channel = CurrentOutDataVectorIt->at(8+2*m);
-        hit.charge = CurrentOutDataVectorIt->at(7+2*m);
+        hit.channel = packet.at(8+2*m);
+        hit.charge = packet.at(7+2*m);
 
-        if(!hit.writeout(mydataFile)){
+        if(!hit.writeout(fd)){
           log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
           write_ebretval(-1);
           exit(1);
@@ -481,14 +480,14 @@ static void BuildEvent(const DataVector & OutDataVector,
     }
     else { // trigger box packet
       for(int w = 0; w < nwords-3 ; w++) {
-        int temp = CurrentOutDataVectorIt->at(7+w) + 0;
+        int temp = packet.at(7+w) + 0;
         for(int n = 0; n < 16; n++) {
           if(temp & 1) {
             OVHitData hit;
             hit.channel = 16*(nwords-4-w) + n;
             hit.charge = 1;
 
-            if(!hit.writeout(mydataFile)){
+            if(!hit.writeout(fd)){
               log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
               write_ebretval(-1);
               exit(1);
@@ -498,9 +497,7 @@ static void BuildEvent(const DataVector & OutDataVector,
         }
       }
     }
-    CurrentOutDataVectorIt++;
-    CurrentOutIndexVectorIt++;
-  } // For all events in data packet
+  }
 }
 
 static bool parse_options(int argc, char **argv)
@@ -716,14 +713,10 @@ static bool GetBaselines()
   // Decode all files at once and load into memory
   // XXX Why does this use threads?  We can't go on until they're all done
   // and threads does not speed it up.
-  for(unsigned int j=0; j<num_nonFanUSB; j++) { // Load all files in at once
-    printf("Starting Thread %d\n", Datamap[j]);
+  for(unsigned int j=0; j<num_nonFanUSB; j++) // Load all files in at once
     pthread_create(&gThreads[Datamap[j]], NULL, handle, (void*) Datamap[j]);
-  }
 
   joiner(num_nonFanUSB);
-
-  cout << "Joined all baseline threads!\n";
 
   int baselines[maxModules][numChannels] = { { } };
 
@@ -1412,7 +1405,7 @@ static bool read_stop_time()
     myconn.disconnect();
     return false;
   }
-  cout << "res[0][0]: " << res[0][0].c_str() << endl;
+
   if(res[0][0].is_null()) {
     myconn.disconnect();
     return false;
@@ -1428,7 +1421,6 @@ static bool write_endofrun_block(string myfname, int data_fd)
 {
   // XXX Why does this part of the code, in particular, have a retry loop
   // for writing to the file?
-  cout << "Trying to write end of run block" << endl;
   if(EBRunMode == kRecovery || SubRunCounter % timestampsperoutput == 0) {
     printf("Recovery or SubRunCounter%%timestampsperoutput == 0, "
            "whatever that means!\n");
@@ -1526,7 +1518,7 @@ int main(int argc, char **argv)
             write_ebretval(-1);
             return 127;
           }
-          cout << "Files are not ready...\n";
+          log_msg(LOG_INFO, "Files are not ready...\n");
           goto out; // XXX Escape here and we can get files built
           if((int)difftime(time(0), timeout) > ENDTIME &&
              (read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME)) {
@@ -1546,14 +1538,10 @@ int main(int argc, char **argv)
           sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
         }
 
-        for(unsigned int j=0; j<numUSB; j++) { // Load all files in at once
-          printf("Starting Thread %d\n", j);
+        for(unsigned int j=0; j<numUSB; j++) // Load all files in at once
           pthread_create(&gThreads[j], NULL, handle, (void*) j);
-        }
 
         joiner(numUSB);
-
-        cout << "Joined all main threads!\n";
 
         // Rename files
         for(unsigned int j = 0; j<numUSB; j++) {
@@ -1678,13 +1666,13 @@ int main(int argc, char **argv)
       }
     }
 
-    cout << "Number of Merged Muon Events: " << EventCounter << endl;
-    cout << "Processed Time Stamp: " << OVUSBStream[0].GetTOLUTC() << endl;
+    log_msg(LOG_INFO, "Number of Merged Muon Events: %d\n", EventCounter);
+    log_msg(LOG_INFO, "Processed Time Stamp: %d\n", OVUSBStream[0].GetTOLUTC());
     EventCounter = 0;
     break; // XXX get out for testing
   }
 
-  cout << "Normally this program should not terminate like it is now...\n";
+  log_msg(LOG_WARNING, "Normally this program should not terminate like this...\n");
 
   write_ebretval(1);
   return 0;

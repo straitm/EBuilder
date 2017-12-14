@@ -168,7 +168,6 @@ bool USBstream::decode()
   }
   else if(myit<myvec.end()) {
     myvec.assign(myit,myvec.end());
-    //myvec.clear();
   }
 
   Reset();
@@ -384,7 +383,7 @@ void USBstream::check_data()
           else {
             MuonEvent = true;
           }
-          if(packet.size() > 7) { // guaruntees at least 1 hit (size > 9 for 2 hits)
+          if(packet.size() > 7) { // guarantees at least 1 hit (size > 9 for 2 hits)
             if(MuonEvent) { // Mu-like double found for this event
               if( myvec.size() > 0 ) {
                 DataVector::iterator InsertionSortIt = myvec.end();
