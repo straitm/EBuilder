@@ -482,7 +482,7 @@ static bool parse_options(int argc, char **argv)
   if(argc <= 1) goto fail;
 
   char c;
-  while ((c = getopt (argc, argv, "r:t:T:R:H:e:h:")) != -1) {
+  while ((c = getopt (argc, argv, "r:t:T:R:H:e:h")) != -1) {
     char buf[BUFSIZE];
 
     switch (c) {
@@ -1113,7 +1113,8 @@ static void read_summary_table()
   }
 
   // USB to array of PMT offsets
-  for(map<int, int*>::iterator os = PMTOffsets.begin(); os != PMTOffsets.end(); os++)
+  for(map<int, int*>::iterator os = PMTOffsets.begin();
+      os != PMTOffsets.end(); os++)
     OVUSBStream[usbmap[os->first]].SetOffset(os->second);
 
   // Count the number of boards in this setup
