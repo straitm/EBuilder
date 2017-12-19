@@ -422,6 +422,12 @@ static void BuildEvent(const DataVector & in_packets,
     const int32_t time_16ns_lo = packet.at(6);
     const uint32_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
 
+    if(type != kOVR_ADC) {
+      log_msg(LOG_CRIT, "Got non-ADC packet, type %d. Not supported!\n", type);
+      write_ebretval(-1);
+      exit(1);
+    }
+
     // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
     // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows in 62.5 MHz
     // clock count bit corresponding to SYNC_PULSE_CLK_COUNT_PERIOD_LOG2
@@ -444,18 +450,11 @@ static void BuildEvent(const DataVector & in_packets,
       }
     }
 
-    if(type == kOVR_DISCRIM) {
-      log_msg(LOG_CRIT, "Fatal: Got a discriminator packet. Not supported!\n");
-      write_ebretval(-1);
-      exit(1);
-    }
-
     OVDataPacketHeader moduleheader;
     // XXX Magic here.  What is 7?  Why divide by 2?  Also it's a little
     // scary that length overflows at 128. Had we better check for that?
     moduleheader.nHits = (packet.size()-7)/2;
     moduleheader.module = module;
-    moduleheader.dataType = type;
     moduleheader.time16ns = time_16ns;
 
     if(!moduleheader.writeout(fd)){
@@ -464,37 +463,15 @@ static void BuildEvent(const DataVector & in_packets,
       exit(1);
     }
 
-    if(type == kOVR_ADC) { // PMTBOARD ADC Packet
+    for(int m = 0; m < moduleheader.nHits; m++) {
+      OVHitData hit;
+      hit.channel = packet.at(8+2*m);
+      hit.charge = packet.at(7+2*m);
 
-      for(int m = 0; m < moduleheader.nHits; m++) {
-        OVHitData hit;
-        hit.channel = packet.at(8+2*m);
-        hit.charge = packet.at(7+2*m);
-
-        if(!hit.writeout(fd)){
-          log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
-          write_ebretval(-1);
-          exit(1);
-        }
-      }
-    }
-    else { // trigger box packet
-      for(int w = 0; w < nwords-3 ; w++) {
-        int temp = packet.at(7+w) + 0;
-        for(int n = 0; n < 16; n++) {
-          if(temp & 1) {
-            OVHitData hit;
-            hit.channel = 16*(nwords-4-w) + n;
-            hit.charge = 1;
-
-            if(!hit.writeout(fd)){
-              log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
-              write_ebretval(-1);
-              exit(1);
-            }
-          }
-          temp >>=1;
-        }
+      if(!hit.writeout(fd)){
+        log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
+        write_ebretval(-1);
+        exit(1);
       }
     }
   }

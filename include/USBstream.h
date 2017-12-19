@@ -128,7 +128,6 @@ struct OVDataPacketHeader {
     if(sizeof(magic) != write(fd, &magic, sizeof magic)) return false;
 
     if(1 != write(fd, &nHits, 1)) return false;
-    if(1 != write(fd, &dataType, 1)) return false;
 
     const uint16_t nmodule = htons(module);
     if(sizeof(nmodule) != write(fd, &nmodule, sizeof nmodule)) return false;
@@ -140,7 +139,6 @@ struct OVDataPacketHeader {
   }
 
   uint8_t nHits;
-  uint8_t dataType;
   uint16_t module;
   uint32_t time16ns; // Was int64_t, but I think is always {0..0xffffffff}
 };
