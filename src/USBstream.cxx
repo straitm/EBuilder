@@ -135,16 +135,25 @@ int USBstream::LoadFile(std::string nextfile)
 
   struct stat myfileinfo;
   if(IsOpen == false) {
-    myFile = new std::fstream(myfilename.c_str(), std::fstream::in | std::fstream::binary);
-    if(myFile->is_open()) {
-      if(stat(myfilename.c_str(), &myfileinfo) == 0) { //get file size
-        if(myfileinfo.st_size) { IsOpen = true; return 1; }
+    myFile = new std::fstream(myfilename.c_str(),
+                              std::fstream::in | std::fstream::binary);
+    if(myFile == NULL || myFile->is_open()) {
+      if(stat(myfilename.c_str(), &myfileinfo) == 0 &&
+         myfileinfo.st_size) {
+        IsOpen = true;
+        return 1;
       }
-      myFile->close(); delete myFile; // Clean up
+      printf("Closing file\n");
+      myFile->close();
+      delete myFile;
       printf("USB %d has died. Exiting.\n",myusb);
       return -1;
     }
-    else { delete myFile; }
+    else {
+      fprintf(stderr, "Could not open %s\n", myfilename.c_str());
+      delete myFile;
+      return -1;
+    }
   }
   else return 1;
 
@@ -222,7 +231,8 @@ bool USBstream::decode()
                 }
               else
                 {
-                  printf("Found corrupted data in file %s\n",myfilename.c_str());
+                  printf("Found corrupted data in file %s: expected %d, got %d\n",
+                         myfilename.c_str(), exp, pretype);
                   exp = 0;
                 }
             }
@@ -235,6 +245,7 @@ bool USBstream::decode()
   //flush_extra();         // For now this is not true
 
   while(myFile->is_open()) {
+    printf("Closing file\n");
     myFile->close();
     usleep(100);
   }
