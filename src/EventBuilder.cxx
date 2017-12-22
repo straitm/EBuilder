@@ -136,7 +136,7 @@ static void write_ebretval(const int val)
 }
 
 
-static void *handle(void *ptr) // This defines a thread to decode files
+static void *decode(void *ptr) // This defines a thread to decode files
 {
   long int usb = (long int) ptr; // XXX munging a void* into an int!
   while(!OVUSBStream[(int)usb].decode()) usleep(100);
@@ -1486,7 +1486,7 @@ int main(int argc, char **argv)
         }
 
         for(unsigned int j=0; j<numUSB; j++) // Load all files in at once
-          pthread_create(&gThreads[j], NULL, handle, (void*) j);
+          pthread_create(&gThreads[j], NULL, decode, (void*) j);
 
         joiner(numUSB);
 
