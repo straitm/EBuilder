@@ -30,12 +30,12 @@ enum packet_type { kOVR_DISCRIM = 0, kOVR_ADC = 1, kOVR_TRIGBOX = 2};
 struct usb_sbop{
   int serial, board, offset, pmtboard_u;
   usb_sbop(const int serial_, const int board_,
-           const int offset_, const int pmtboard_u_)
+           const int pmtboard_u_, const int offset_)
   {
     serial = serial_;
     board = board_;
-    offset = offset_;
     pmtboard_u = pmtboard_u_;
+    offset = offset_;
   }
 };
 
@@ -406,11 +406,14 @@ static void BuildEvent(const DataVector & in_packets,
       exit(1);
     }
 
-    const int nwords = (packet.at(0) & 0xff) - 1;
     const int module_local = (packet.at(0) >> 8) & 0x7f;
     // EBuilder temporary internal mapping is decoded back to pmtbaord_u from
     // MySQL table
     const int usb = OVUSBStream[OutIndex[packeti]].GetUSB();
+    if(!PMTUniqueMap.count(usb*1000+module_local)){
+      log_msg(LOG_ERR, "Got unknown module number %d on USB %d\n",
+              module_local, usb);
+    }
     const int16_t module = PMTUniqueMap[usb*1000+module_local];
     const int8_t type = packet.at(0) >> 15;
     const int32_t time_16ns_hi = packet.at(5);
@@ -794,103 +797,82 @@ static char * get_config_table_name(mysqlpp::Connection * myconn)
 }
 
 // Return a list of distict USB serial numbers for the given config table.
-// If positiveHV is true, then require the HV column to be not -999, which
-// marks the USB as a Fan-In, whatever that is.  Sets no globals.
+// Sets no globals.
 static vector<int> get_distinct_usb_serials(mysqlpp::Connection * myconn,
-                                            const char * const config_table,
-                                            const bool positiveHV)
+                                            const char * const config_table)
 {
   vector<int> serials;
   if(myconn == NULL){
-    serials.push_back(6);
     serials.push_back(21);
     serials.push_back(24);
     serials.push_back(25);
     serials.push_back(29);
+    serials.push_back(6);
     return serials;
   }
 
   char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT DISTINCT USB_serial FROM %s %s ORDER BY USB_serial;",
-    config_table, positiveHV?"WHERE HV != -999":"");
+  sprintf(query_string, "SELECT DISTINCT USB_serial FROM %s ORDER BY USB_serial;",
+    config_table);
   mysqlpp::Query query = myconn->query(query_string);
   mysqlpp::StoreQueryResult res = query.store();
   if(res.num_rows() < 1)
     die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  log_msg(LOG_INFO, "Found %u distinct %sUSBs in table %s\n",
-          res.num_rows(), positiveHV?"non-Fan-in ":"", config_table);
+  log_msg(LOG_INFO, "Found %u distinct USBs in table %s\n",
+          res.num_rows(), config_table);
   for(unsigned int i = 0; i < res.num_rows(); i++)
     serials.push_back(res[i][0]);
   return serials;
 }
 
-// Return a vector of {USB serial numbers, board numbers, time offsets, pmtboard_u}
+// Return a vector of {USB serial numbers, board numbers, pmtboard_u, time offsets}
 // for all USBs in the given table.  Sets no globals.
 static vector<usb_sbop> get_sbops(mysqlpp::Connection * myconn,
                                   const char * const config_table)
 {
   vector<usb_sbop> sbops;
   if(myconn == NULL){
-    sbops.push_back(usb_sbop(15,0,200,0));
-    sbops.push_back(usb_sbop(15,2,202,0));
-    sbops.push_back(usb_sbop(15,3,203,0));
-    sbops.push_back(usb_sbop(15,4,204,0));
-    sbops.push_back(usb_sbop(15,5,205,0));
-    sbops.push_back(usb_sbop(15,6,206,0));
-    sbops.push_back(usb_sbop(15,7,207,0));
-    sbops.push_back(usb_sbop(15,8,208,0));
-    sbops.push_back(usb_sbop(15,9,209,0));
-    sbops.push_back(usb_sbop(15,10,210,0));
-    sbops.push_back(usb_sbop(16,11,211,0));
-    sbops.push_back(usb_sbop(16,12,212,0));
-    sbops.push_back(usb_sbop(16,13,213,0));
-    sbops.push_back(usb_sbop(16,14,214,0));
-    sbops.push_back(usb_sbop(16,15,215,0));
-    sbops.push_back(usb_sbop(16,16,216,0));
-    sbops.push_back(usb_sbop(16,17,217,0));
-    sbops.push_back(usb_sbop(16,18,218,0));
-    sbops.push_back(usb_sbop(16,19,219,0));
-    sbops.push_back(usb_sbop(16,20,220,0));
-    sbops.push_back(usb_sbop(5,21,221,0));
-    sbops.push_back(usb_sbop(5,22,222,0));
-    sbops.push_back(usb_sbop(5,23,223,0));
-    sbops.push_back(usb_sbop(5,24,224,0));
-    sbops.push_back(usb_sbop(5,25,225,0));
-    sbops.push_back(usb_sbop(5,26,226,0));
-    sbops.push_back(usb_sbop(5,27,227,0));
-    sbops.push_back(usb_sbop(5,28,228,0));
-    sbops.push_back(usb_sbop(5,29,229,0));
-    sbops.push_back(usb_sbop(5,30,230,0));
-    sbops.push_back(usb_sbop(17,31,231,0));
-    sbops.push_back(usb_sbop(17,32,232,0));
-    sbops.push_back(usb_sbop(17,33,233,0));
-    sbops.push_back(usb_sbop(17,34,234,0));
-    sbops.push_back(usb_sbop(17,35,235,0));
-    sbops.push_back(usb_sbop(17,36,236,0));
-    sbops.push_back(usb_sbop(17,37,237,0));
-    sbops.push_back(usb_sbop(17,38,238,0));
-    sbops.push_back(usb_sbop(17,39,239,0));
-    sbops.push_back(usb_sbop(17,40,240,0));
-    sbops.push_back(usb_sbop(18,41,241,0));
-    sbops.push_back(usb_sbop(18,42,242,0));
-    sbops.push_back(usb_sbop(18,43,243,0));
-    sbops.push_back(usb_sbop(18,44,244,0));
-    sbops.push_back(usb_sbop(18,45,245,0));
-    sbops.push_back(usb_sbop(18,46,246,0));
-    sbops.push_back(usb_sbop(18,47,247,0));
-    sbops.push_back(usb_sbop(18,48,248,0));
-    sbops.push_back(usb_sbop(18,49,249,0));
-    sbops.push_back(usb_sbop(18,50,250,0));
-    sbops.push_back(usb_sbop(18,51,251,0));
-    sbops.push_back(usb_sbop(18,52,252,0));
-    sbops.push_back(usb_sbop(18,53,253,0));
-    sbops.push_back(usb_sbop(18,54,254,0));
-    sbops.push_back(usb_sbop(18,55,255,0));
-    sbops.push_back(usb_sbop(18,56,256,0));
-    sbops.push_back(usb_sbop(28,58,258,0));
-    sbops.push_back(usb_sbop(28,59,259,0));
-    sbops.push_back(usb_sbop(28,60,260,0));
-    sbops.push_back(usb_sbop(28,61,261,0));
+    // from sample data
+    sbops.push_back(usb_sbop(21,36,200,0));
+    sbops.push_back(usb_sbop(21,37,201,0));
+    sbops.push_back(usb_sbop(21,38,202,0));
+    sbops.push_back(usb_sbop(21,39,203,0));
+    sbops.push_back(usb_sbop(21,40,204,0));
+    sbops.push_back(usb_sbop(21,41,205,0));
+    sbops.push_back(usb_sbop(21,42,206,0));
+    sbops.push_back(usb_sbop(21,43,207,0));
+    sbops.push_back(usb_sbop(24,18,208,0));
+    sbops.push_back(usb_sbop(24,19,209,0));
+    sbops.push_back(usb_sbop(24,20,210,0));
+    sbops.push_back(usb_sbop(24,21,211,0));
+    sbops.push_back(usb_sbop(24,22,212,0));
+    sbops.push_back(usb_sbop(24,23,213,0));
+    sbops.push_back(usb_sbop(24,24,214,0));
+    sbops.push_back(usb_sbop(24,25,215,0));
+    sbops.push_back(usb_sbop(24,26,216,0));
+    sbops.push_back(usb_sbop(24,27,217,0));
+    sbops.push_back(usb_sbop(25,32,218,0));
+    sbops.push_back(usb_sbop(25,33,219,0));
+    sbops.push_back(usb_sbop(25,34,220,0));
+    sbops.push_back(usb_sbop(25,35,221,0));
+    sbops.push_back(usb_sbop(29,0,222,0));
+    sbops.push_back(usb_sbop(29,1,223,0));
+    sbops.push_back(usb_sbop(29,2,224,0));
+    sbops.push_back(usb_sbop(29,3,225,0));
+    sbops.push_back(usb_sbop(29,4,226,0));
+    sbops.push_back(usb_sbop(29,5,227,0));
+    sbops.push_back(usb_sbop(29,6,228,0));
+    sbops.push_back(usb_sbop(29,7,229,0));
+    sbops.push_back(usb_sbop(29,8,230,0));
+    sbops.push_back(usb_sbop(29,9,231,0));
+    sbops.push_back(usb_sbop(6,10,232,0));
+    sbops.push_back(usb_sbop(6,11,233,0));
+    sbops.push_back(usb_sbop(6,12,234,0));
+    sbops.push_back(usb_sbop(6,13,235,0));
+    sbops.push_back(usb_sbop(6,14,236,0));
+    sbops.push_back(usb_sbop(6,15,237,0));
+    sbops.push_back(usb_sbop(6,16,238,0));
+    sbops.push_back(usb_sbop(6,17,239,0));
     return sbops;
   }
 
@@ -909,11 +891,12 @@ static vector<usb_sbop> get_sbops(mysqlpp::Connection * myconn,
   return sbops;
 }
 
+// Returns the number of boards and the highest module number
 static std::pair<int, int> board_count(mysqlpp::Connection * myconn,
                                        const char * const config_table)
 {
   if(myconn == NULL)
-    return std::pair<int, int>(60, 261); // from online400_no_ts7
+    return std::pair<int, int>(40, 240); // from sample data
 
   char query_string[BUFSIZE];
   sprintf(query_string, "SELECT DISTINCT pmtboard_u FROM %s;", config_table);
