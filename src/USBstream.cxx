@@ -18,7 +18,6 @@ USBstream::USBstream()
   time_hi_2 = 0;
   time_lo_1 = 0;
   time_lo_2 = 0;
-  timestamps_read = 0;
   word_index = 0;
   word_count[0] = 0;
   word_count[1] = 0;
@@ -44,7 +43,6 @@ void USBstream::Reset()
 {
   words = 0;
   got_hi = false;
-  timestamps_read = 0;
   word_index = 0;
   word_count[0] =  0;
   word_count[1] = 0;
@@ -54,16 +52,6 @@ void USBstream::Reset()
   fsize=0;
 }
 
-void USBstream::SetOffset(int *off)
-{
-  for(int i = 0; i < 64; i++) {
-    if(*(off+i) > 0) {
-      offset[i] = *(off+i);
-    } else {
-      offset[i] = 0;
-    }
-  }
-}
 
 void USBstream::SetThresh(int thresh, int threshtype)
 {
@@ -134,7 +122,7 @@ int USBstream::LoadFile(std::string nextfile)
   myfilename = smyfilename.str();
 
   struct stat myfileinfo;
-  if(IsOpen == false) {
+  if(!IsOpen) {
     myFile = new std::fstream(myfilename.c_str(),
                               std::fstream::in | std::fstream::binary);
     if(myFile == NULL || myFile->is_open()) {
@@ -448,7 +436,6 @@ bool USBstream::check_debug(uint64_t d)
           time_lo_1 = (d >> 8) & 0xff;
           time_lo_2 = d & 0xff;
           got_hi = false;
-          timestamps_read++;
           flush_extra();
 
           // Check to see if first time stamp found and if so, rewind file

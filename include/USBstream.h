@@ -18,14 +18,11 @@ public:
 
   void SetUSB(int usb) { myusb=usb; }
   void SetThresh(int thresh, int threshtype);
-  void SetTOLUTC(uint64_t tolutc) { mytolutc=tolutc; }
-  void SetOffset(int *off);
   void SetBaseline(const int base[64 /* maxModules */][64 /* numChannels */]);
 
   void Reset();
 
   int GetUSB() const { return myusb; }
-  int GetNPMT() const { return mynpmt; }
   const char* GetFileName() { return myfilename.c_str(); }
   uint64_t GetTOLUTC() const { return mytolutc; }
 
@@ -38,9 +35,7 @@ private:
 
   int mythresh;
   int myusb;
-  int mynpmt;
   int baseline[64 /* maxModules */][64 /* numChannels */];
-  int offset[64];
   int adj1[64];
   int adj2[64];
   uint64_t mytolutc;
@@ -67,7 +62,6 @@ private:
   int32_t time_hi_2;
   int32_t time_lo_1;
   int32_t time_lo_2;
-  int timestamps_read;
 
   // XXX this is signed, but gets things cast to unsigned pushed into it.
   // Probably they get cast back and forth and happen to be right in the end...

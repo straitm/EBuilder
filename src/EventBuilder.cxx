@@ -1078,11 +1078,6 @@ static void read_summary_table()
       PMTOffsets[sbops[i].serial][sbops[i].board] = sbops[i].offset;
   }
 
-  // USB to array of PMT offsets
-  for(map<int, int*>::iterator os = PMTOffsets.begin();
-      os != PMTOffsets.end(); os++)
-    OVUSBStream[usbmap[os->first]].SetOffset(os->second);
-
   for(unsigned int i = 0; i < usbserials.size(); i++)
     Datamap[i] = usbmap[usbserials[i]];
 
