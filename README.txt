@@ -27,7 +27,7 @@ Compile with "make".
 ============================== Output file format ==============================
 ================================================================================
 
-As of 2017-12-13 this is subject to change.
+As of 2017-12-22 this is subject to change.
 
 The output file consists of a series of events followed by an end-of-run
 marker.  Events consist of one or more module packets.  Module packets consist
@@ -49,8 +49,8 @@ The format of an event, where each tick represents one bit, is:
 
   Number of module packets: Unsigned 16 bit integer.
 
-    It is not expected to be greater than 0xff, but it is convenient to have
-    all magic numbers be 16 bits and to align things to 32 bits.
+    It is not expected to be greater than 0xff, but it is convenient to align
+    things to 32 bits.
 
     TODO: I am not sure whether the number of module packets is always equal to
     the number of modules with hits, or if they can be repeated in the case

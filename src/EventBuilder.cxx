@@ -12,8 +12,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
-#include <mysql++.h>
+#include <pthread.h>
+#include <map>
 
 using std::vector;
 using std::string;
@@ -72,12 +72,6 @@ static string OVDAQHost = "dcfovdaq";
 static string OutBaseDir = "."; // output directory
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
-// Set in read_summary_table() just to get the other stuff
-static char server[BUFSIZE] = {0};
-static char username[BUFSIZE] = {0};
-static char password[BUFSIZE] = {0};
-static char database[BUFSIZE] = {0};
-
 // Set in read_summary_table() from database information and used throughout
 static unsigned int numUSB = 0;
 static map<int, int> Datamap; // XXX Maps numerical ordering of
@@ -99,59 +93,12 @@ static long int *maxcount_16ns_hi; // for sync overflows for all boards
 // set in read_summary_table() and main()
 static RunMode EBRunMode = kNormal;
 
-static void write_ebretval(const int val)
-{
-  return; // XXX No database for now
-
-  mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-
-  if(!myconn.connect(database, server, username, password)) {
-    log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database, server);
-    return;
-  }
-
-  char query_string[BUFSIZE];
-
-  sprintf(query_string, "SELECT Run_number FROM OV_runsummary "
-    "WHERE Run_number = '%s';", RunNumber.c_str());
-  mysqlpp::Query query = myconn.query(query_string);
-  mysqlpp::StoreQueryResult res = query.store();
-
-  if(res.num_rows() == 1){ // Run has never been reprocessed with this configuration
-    sprintf(query_string, "Update OV_runsummary set EBretval = '%d' "
-      "where Run_number = '%s';", val, RunNumber.c_str());
-
-    mysqlpp::Query query2 = myconn.query(query_string);
-    if(!query2.execute())
-      log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n", query_string, query2.error());
-  }
-  else {
-    log_msg(LOG_WARNING,
-      "Did not find unique OV_runsummary entry for run %s in eb_writeretval\n",
-      RunNumber.c_str());
-  }
-
-  myconn.disconnect();
-}
-
 
 static void *decode(void *ptr) // This defines a thread to decode files
 {
   long int usb = (long int) ptr; // XXX munging a void* into an int!
   while(!OVUSBStream[(int)usb].decode()) usleep(100);
   return NULL;
-}
-
-// Joins all the threads
-static void joiner(const unsigned long int nusb)
-{
-  if(nusb < numUSB)
-    for(unsigned int n = 0; n < nusb; n++)
-      pthread_join(gThreads[Datamap[n]], NULL);
-  else
-    for(unsigned int n = 0; n < numUSB; n++)
-      pthread_join(gThreads[n], NULL);
 }
 
 // opens output data file
@@ -162,7 +109,6 @@ static int open_file(const string name)
   if(fd < 0){
     log_msg(LOG_CRIT, "Fatal Error: failed to open file %s: %s\n",
             name.c_str(), strerror(errno));
-    write_ebretval(-1);
     exit(1);
   }
   return fd;
@@ -241,7 +187,6 @@ static bool LoadRun()
     if(errno) {
       log_msg(LOG_CRIT, "Error (%s) opening directory %s\n", strerror(errno),
               BinaryDir.c_str());
-      write_ebretval(-1);
       exit(1);
     }
     return false;
@@ -258,7 +203,6 @@ static bool LoadRun()
   if(mkdir(OutputFolder.c_str(), 0777)) {
     if(EBRunMode != kRecovery) {
       log_msg(LOG_CRIT, "Error creating output file %s\n", OutputFolder.c_str());
-      write_ebretval(-1);
       exit(1);
     }
   }
@@ -266,14 +210,12 @@ static bool LoadRun()
     if(EBRunMode != kRecovery) {
       log_msg(LOG_CRIT, "Error creating output file %s\n",
         TempProcessedOutput.c_str());
-      write_ebretval(-1);
       exit(1);
     }
   }
   else { // FixMe: To optimize (logic) (Was never done for Double Chooz - needed?)
     if(EBRunMode == kRecovery) {
       log_msg(LOG_CRIT, "Output dirs did not already exist in recovery mode.\n");
-      write_ebretval(-1);
       exit(1);
     }
   }
@@ -374,7 +316,6 @@ static void BuildEvent(const DataVector & in_packets,
   if(fd <= 0) {
     log_msg(LOG_CRIT, "Fatal Error in BuildEvent(). Invalid file "
       "handle for previously opened data file!\n");
-    write_ebretval(-1);
     exit(1);
   }
 
@@ -392,7 +333,6 @@ static void BuildEvent(const DataVector & in_packets,
 
   if(!evheader.writeout(fd)){
     log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
-    write_ebretval(-1);
     exit(1);
   }
 
@@ -402,7 +342,6 @@ static void BuildEvent(const DataVector & in_packets,
     if(packet.size() < 7) {
       log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < 7\n",
          (unsigned int) packet.size());
-      write_ebretval(-1);
       exit(1);
     }
 
@@ -422,7 +361,6 @@ static void BuildEvent(const DataVector & in_packets,
 
     if(type != kOVR_ADC) {
       log_msg(LOG_CRIT, "Got non-ADC packet, type %d. Not supported!\n", type);
-      write_ebretval(-1);
       exit(1);
     }
 
@@ -457,7 +395,6 @@ static void BuildEvent(const DataVector & in_packets,
 
     if(!moduleheader.writeout(fd)){
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header!\n");
-      write_ebretval(-1);
       exit(1);
     }
 
@@ -468,7 +405,6 @@ static void BuildEvent(const DataVector & in_packets,
 
       if(!hit.writeout(fd)){
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
-        write_ebretval(-1);
         exit(1);
       }
     }
@@ -581,72 +517,6 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
       baseptr[i][j] = (int)baseline[i][j];
 }
 
-static bool WriteBaselineTable(const int baseptr[maxModules][numChannels],
-                               const int usb)
-{
-  return true; // XXX No database, so just pretend things are ok
-
-  mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-  mysqlpp::StoreQueryResult res;
-
-  if(!myconn.connect(database, server, username, password)) {
-    log_msg(LOG_NOTICE, "Cannot connect to MySQL database %s at %s\n",
-      database, server);
-    return false;
-  }
-
-  char query_string[BUFSIZE];
-
-  time_t rawtime;
-  struct tm * timeinfo;
-
-  time ( &rawtime );
-  timeinfo = localtime ( &rawtime );
-
-  char mydate[BUFSIZE];
-  char mytime[BUFSIZE];
-  char mybuff[BUFSIZE];
-  sprintf(mydate, "%.4d-%.2d-%.2d", 1900+timeinfo->tm_year,
-          1+timeinfo->tm_mon, timeinfo->tm_mday);
-  sprintf(mytime, "%.2d:%.2d:%.2d", timeinfo->tm_hour, timeinfo->tm_min,
-    timeinfo->tm_sec);
-  string baseline_values = "";
-
-  for(int i = 0; i < maxModules; i++) {
-    baseline_values = "";
-    for( int j = 0; j < numChannels; j++) {
-      if( *(*(baseptr+i) + j) > 0) {
-
-        if(j==0) {
-          sprintf(mybuff, ",%d", PMTUniqueMap[1000*usb+i]);
-          baseline_values.append(mybuff); // Insert board_address
-        }
-
-        sprintf(mybuff, ",%d", *(*(baseptr+i) + j)); // Insert baseline value
-        baseline_values.append(mybuff);
-
-        if(j==numChannels-1) { // last baseline value has been inserted
-
-          sprintf(query_string, "INSERT INTO OV_pedestal "
-            "VALUES ('%s','%s','%s',''%s);",
-            RunNumber.c_str(), mydate, mytime, baseline_values.c_str());
-
-          mysqlpp::Query query = myconn.query(query_string);
-          if(!query.execute()) {
-            log_msg(LOG_NOTICE, "MySQL query (%s) error: %s\n",
-                    query_string, query.error());
-            myconn.disconnect();
-            return false;
-          }
-        }
-      }
-    }
-  }
-
-  myconn.disconnect();
-  return true;
-}
-
 static bool GetBaselines()
 {
   // Check for a baseline file directory with the right right number of files.
@@ -697,65 +567,18 @@ static bool GetBaselines()
     DataVector BaselineData;
     OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
     CalculatePedestal(baselines, BaselineData);
-    OVUSBStream[Datamap[i]].SetBaseline(baselines); // Should check for success here?
-    const int usb = OVUSBStream[Datamap[i]].GetUSB(); // Should I check for success here?
-    if(!WriteBaselineTable(baselines, usb)) {
-      log_msg(LOG_ERR, "Fatal Error writing baseline table to MySQL database\n");
-      return false;
-    }
+    OVUSBStream[Datamap[i]].SetBaseline(baselines);
   }
 
   return true;
 }
 
-
-static bool write_ebsummary()
-{
-  return true; // XXX no database, so just pretend this worked.
-
-  mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-  mysqlpp::StoreQueryResult res;
-
-  if(!myconn.connect(database, server, username, password)) {
-    log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database, server);
-    return false;
-  }
-
-  char query_string[BUFSIZE];
-
-  sprintf(query_string, "SELECT Path FROM OV_ebuilder "
-    "WHERE Run_number = '%s', SW_Threshold = '%04d', "
-    "SW_TriggerMode = '%01d', Res1 = '00', Res2 = '00';",
-    RunNumber.c_str(), Threshold, (int)EBTrigMode);
-  mysqlpp::Query query = myconn.query(query_string);
-  res = query.store();
-
-  if(res.num_rows() == 0){ // Run has never been reprocessed with this configuration
-    sprintf(query_string, "INSERT INTO OV_ebuilder "
-      "(Run_number,Path,SW_Threshold,SW_TriggerMode,Res1,Res2) "
-      "VALUES ('%s','%s','%04d','%01d','00','00');",
-      RunNumber.c_str(), OutputFolder.c_str(), Threshold, (int)EBTrigMode);
-
-    mysqlpp::Query query2 = myconn.query(query_string);
-    if(!query2.execute()) {
-      log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n",
-        query_string, query2.error());
-      myconn.disconnect();
-      return false;
-    }
-  }
-
-  myconn.disconnect();
-  return true;
-}
 
 static void die_with_log(const char * const format, ...)
 {
   va_list ap;
   va_start(ap, format);
   log_msg(LOG_CRIT, format, ap);
-  write_ebretval(-1);
   exit(127);
 }
 
@@ -770,295 +593,91 @@ static string cpp_sprintf(const char * format, ...)
   return buf;
 }
 
-// Return the name of the config table for this run.  Sets no globals.
-static char * get_config_table_name(mysqlpp::Connection * myconn)
-{
-  if(myconn == NULL) return NULL;
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT config_table FROM OV_runsummary "
-    "WHERE Run_number = '%s' ORDER BY start_time DESC;", RunNumber.c_str());
-  const mysqlpp::StoreQueryResult res = myconn->query(query_string).store();
-  if(res.num_rows() < 1)
-    die_with_log("Found no matching entry for run %s in OV_runsummary\n",
-      RunNumber.c_str());
-  else if(res.num_rows() > 1)
-    // Really using the most recent entry?  I think res[0] probably means
-    // the oldest entry, but I'm not sure.
-    log_msg(LOG_WARNING, "Found more than one entry for run %s "
-      "in OV_runsummary. Using most recent entry.\n", RunNumber.c_str());
-  else
-    log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
-      RunNumber.c_str());
-
-  static char config_table[BUFSIZE];
-  strcpy(config_table, res[0][0].c_str());
-  return config_table;
-}
-
 // Return a list of distict USB serial numbers for the given config table.
 // Sets no globals.
-static vector<int> get_distinct_usb_serials(mysqlpp::Connection * myconn,
-                                            const char * const config_table)
+static vector<int> get_distinct_usb_serials()
 {
   vector<int> serials;
-  if(myconn == NULL){
-    serials.push_back(21);
-    serials.push_back(24);
-    serials.push_back(25);
-    serials.push_back(29);
-    serials.push_back(6);
-    return serials;
-  }
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT DISTINCT USB_serial FROM %s ORDER BY USB_serial;",
-    config_table);
-  mysqlpp::Query query = myconn->query(query_string);
-  mysqlpp::StoreQueryResult res = query.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  log_msg(LOG_INFO, "Found %u distinct USBs in table %s\n",
-          res.num_rows(), config_table);
-  for(unsigned int i = 0; i < res.num_rows(); i++)
-    serials.push_back(res[i][0]);
+  // TODO: read from a config file.
+  serials.push_back(21);
+  serials.push_back(24);
+  serials.push_back(25);
+  serials.push_back(29);
+  serials.push_back(6);
   return serials;
 }
 
 // Return a vector of {USB serial numbers, board numbers, pmtboard_u, time offsets}
 // for all USBs in the given table.  Sets no globals.
-static vector<usb_sbop> get_sbops(mysqlpp::Connection * myconn,
-                                  const char * const config_table)
+static vector<usb_sbop> get_sbops()
 {
   vector<usb_sbop> sbops;
-  if(myconn == NULL){
-    // from sample data
-    sbops.push_back(usb_sbop(21,36,200,0));
-    sbops.push_back(usb_sbop(21,37,201,0));
-    sbops.push_back(usb_sbop(21,38,202,0));
-    sbops.push_back(usb_sbop(21,39,203,0));
-    sbops.push_back(usb_sbop(21,40,204,0));
-    sbops.push_back(usb_sbop(21,41,205,0));
-    sbops.push_back(usb_sbop(21,42,206,0));
-    sbops.push_back(usb_sbop(21,43,207,0));
-    sbops.push_back(usb_sbop(24,18,208,0));
-    sbops.push_back(usb_sbop(24,19,209,0));
-    sbops.push_back(usb_sbop(24,20,210,0));
-    sbops.push_back(usb_sbop(24,21,211,0));
-    sbops.push_back(usb_sbop(24,22,212,0));
-    sbops.push_back(usb_sbop(24,23,213,0));
-    sbops.push_back(usb_sbop(24,24,214,0));
-    sbops.push_back(usb_sbop(24,25,215,0));
-    sbops.push_back(usb_sbop(24,26,216,0));
-    sbops.push_back(usb_sbop(24,27,217,0));
-    sbops.push_back(usb_sbop(25,32,218,0));
-    sbops.push_back(usb_sbop(25,33,219,0));
-    sbops.push_back(usb_sbop(25,34,220,0));
-    sbops.push_back(usb_sbop(25,35,221,0));
-    sbops.push_back(usb_sbop(29,0,222,0));
-    sbops.push_back(usb_sbop(29,1,223,0));
-    sbops.push_back(usb_sbop(29,2,224,0));
-    sbops.push_back(usb_sbop(29,3,225,0));
-    sbops.push_back(usb_sbop(29,4,226,0));
-    sbops.push_back(usb_sbop(29,5,227,0));
-    sbops.push_back(usb_sbop(29,6,228,0));
-    sbops.push_back(usb_sbop(29,7,229,0));
-    sbops.push_back(usb_sbop(29,8,230,0));
-    sbops.push_back(usb_sbop(29,9,231,0));
-    sbops.push_back(usb_sbop(6,10,232,0));
-    sbops.push_back(usb_sbop(6,11,233,0));
-    sbops.push_back(usb_sbop(6,12,234,0));
-    sbops.push_back(usb_sbop(6,13,235,0));
-    sbops.push_back(usb_sbop(6,14,236,0));
-    sbops.push_back(usb_sbop(6,15,237,0));
-    sbops.push_back(usb_sbop(6,16,238,0));
-    sbops.push_back(usb_sbop(6,17,239,0));
-    return sbops;
-  }
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT USB_serial, board_number, offset, pmtboard_u FROM %s;",
-    config_table);
-  mysqlpp::Query query = myconn->query(query_string);
-  mysqlpp::StoreQueryResult res=query.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  log_msg(LOG_INFO, "Found time offsets for online table %s\n", config_table);
-
-  for(unsigned int i = 0; i < res.num_rows(); i++)
-    sbops.push_back(usb_sbop(atoi(res[i][0]), atoi(res[i][1]),
-                             atoi(res[i][2]), atoi(res[i][3])));
+  // from sample data. TODO: Read from a config file.
+  sbops.push_back(usb_sbop(21,36,200,0));
+  sbops.push_back(usb_sbop(21,37,201,0));
+  sbops.push_back(usb_sbop(21,38,202,0));
+  sbops.push_back(usb_sbop(21,39,203,0));
+  sbops.push_back(usb_sbop(21,40,204,0));
+  sbops.push_back(usb_sbop(21,41,205,0));
+  sbops.push_back(usb_sbop(21,42,206,0));
+  sbops.push_back(usb_sbop(21,43,207,0));
+  sbops.push_back(usb_sbop(24,18,208,0));
+  sbops.push_back(usb_sbop(24,19,209,0));
+  sbops.push_back(usb_sbop(24,20,210,0));
+  sbops.push_back(usb_sbop(24,21,211,0));
+  sbops.push_back(usb_sbop(24,22,212,0));
+  sbops.push_back(usb_sbop(24,23,213,0));
+  sbops.push_back(usb_sbop(24,24,214,0));
+  sbops.push_back(usb_sbop(24,25,215,0));
+  sbops.push_back(usb_sbop(24,26,216,0));
+  sbops.push_back(usb_sbop(24,27,217,0));
+  sbops.push_back(usb_sbop(25,32,218,0));
+  sbops.push_back(usb_sbop(25,33,219,0));
+  sbops.push_back(usb_sbop(25,34,220,0));
+  sbops.push_back(usb_sbop(25,35,221,0));
+  sbops.push_back(usb_sbop(29,0,222,0));
+  sbops.push_back(usb_sbop(29,1,223,0));
+  sbops.push_back(usb_sbop(29,2,224,0));
+  sbops.push_back(usb_sbop(29,3,225,0));
+  sbops.push_back(usb_sbop(29,4,226,0));
+  sbops.push_back(usb_sbop(29,5,227,0));
+  sbops.push_back(usb_sbop(29,6,228,0));
+  sbops.push_back(usb_sbop(29,7,229,0));
+  sbops.push_back(usb_sbop(29,8,230,0));
+  sbops.push_back(usb_sbop(29,9,231,0));
+  sbops.push_back(usb_sbop(6,10,232,0));
+  sbops.push_back(usb_sbop(6,11,233,0));
+  sbops.push_back(usb_sbop(6,12,234,0));
+  sbops.push_back(usb_sbop(6,13,235,0));
+  sbops.push_back(usb_sbop(6,14,236,0));
+  sbops.push_back(usb_sbop(6,15,237,0));
+  sbops.push_back(usb_sbop(6,16,238,0));
+  sbops.push_back(usb_sbop(6,17,239,0));
   return sbops;
 }
 
 // Returns the number of boards and the highest module number
-static std::pair<int, int> board_count(mysqlpp::Connection * myconn,
-                                       const char * const config_table)
+static std::pair<int, int> board_count()
 {
-  if(myconn == NULL)
-    return std::pair<int, int>(40, 240); // from sample data
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT DISTINCT pmtboard_u FROM %s;", config_table);
-  mysqlpp::Query query = myconn->query(query_string);
-  mysqlpp::StoreQueryResult res = query.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  log_msg(LOG_INFO, "Found %u distinct PMT boards in table %s\n",
-          res.num_rows(), config_table);
-
-  int max = 0;
-  for(unsigned int i = 0; i < res.num_rows(); i++) {
-    const int pmtnum = atoi(res[i][0]);
-    if(pmtnum > max) max = pmtnum;
-  }
-  log_msg(LOG_INFO, "Found max PMT board number %d in table %s\n", max, config_table);
-
-  return std::pair<int, int>(res.num_rows(), max);
+  return std::pair<int, int>(40, 240); // TODO: read from config file
 }
 
 // Gets the necessary run info from the run summary table, does some checking,
 // and returns the values that will be used to set globals.  No globals set here.
-static some_run_info get_some_run_info(mysqlpp::Connection * myconn)
+static some_run_info get_some_run_info()
 {
-  if(myconn == NULL){
-    some_run_info info;
-    memset(&info, 0, sizeof(some_run_info));
-    info.has_ebcomment = false;
-    info.has_ebsubrun = false;
-    info.has_stoptime = true;
-    info.daqdisk = 2;
-    return info;
-  }
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT Run_Type,SW_Threshold,"
-    "SW_TriggerMode,daq_disk,EBcomment,EBsubrunnumber,stop_time"
-    "FROM OV_runsummary where Run_number = '%s' ORDER BY start_time DESC;",
-    RunNumber.c_str());
-  mysqlpp::Query query = myconn->query(query_string);
-  mysqlpp::StoreQueryResult res = query.store();
-  if(res.num_rows() < 1)
-    die_with_log("MySQL query (%s) error: %s\n", query_string, query.error());
-  if(res.num_rows() > 1) // Check that OVRunType is the same
-    log_msg(LOG_WARNING, "Found more than one entry for run %s in "
-      "OV_runsummary. Using most recent entry\n", RunNumber.c_str());
-  else
-    log_msg(LOG_INFO, "Found MySQL run summary entry for run: %s\n",
-            RunNumber.c_str());
-
-  if(OVRunType != res[0][0].c_str())
-    die_with_log("MySQL Run Type: %s does not match command line "
-      "Run Type: %s\n", res[0][0].c_str(), OVRunType.c_str());
-
-  // Sanity check for each run mode
-  if(EBRunMode == kReprocess &&
-     atoi(res[0][1]) == Threshold && (TriggerMode)atoi(res[0][2]) == EBTrigMode)
-    die_with_log("MySQL running parameters match "
-      "reprocessing parameters. Threshold: %04d\tTrigger type: %01d\n",
-      Threshold, (int)EBTrigMode);
-
-  if(EBRunMode == kRecovery &&
-    (res[0][0].c_str() != OVRunType ||
-       atoi(res[0][1]) != Threshold ||
-       atoi(res[0][2]) != (int)EBTrigMode))
-    die_with_log("MySQL parameters do not match recovery "
-      "parameters. RunType: %s\tThreshold: %04d\tTrigger type: %01d\n",
-      OVRunType.c_str(), Threshold, (int)EBTrigMode);
-
-  if(EBRunMode != kReprocess) {
-    // XXX except then it isn't actually changed
-    if(EBTrigMode != (TriggerMode)atoi(res[0][2]))
-      log_msg(LOG_WARNING, "Trigger Mode requested (%d) will "
-        "override MySQL setting (%d)\n", (int)EBTrigMode, atoi(res[0][2]));
-
-    // XXX except then it isn't actually changed
-    if(Threshold != atoi(res[0][1]))
-      log_msg(LOG_WARNING, "Threshold requested (%d) will override "
-        "MySQL setting (%d)\n", Threshold, atoi(res[0][1]));
-
-    printf("Threshold: %d \t EBTrigMode: %d\n", Threshold, EBTrigMode);
-  }
-
   some_run_info info;
-  info.daqdisk      = atoi(res[0][3]);
-  if((info.has_ebcomment = !res[0][4].is_null())) info.ebcomment = atoi(res[0][4]);
-  if((info.has_ebsubrun  = !res[0][5].is_null())) info.ebsubrun  = atoi(res[0][5]);
-  info.has_stoptime     = !res[0][6].is_null();
-
-  if(info.daqdisk != 1 && info.daqdisk != 2)
-    die_with_log("MySQL query error: could not retrieve "
-      "data disk for run: %s\n", RunNumber.c_str());
-
+  memset(&info, 0, sizeof(some_run_info));
+  info.has_ebcomment = false;
+  info.has_ebsubrun = false;
+  info.has_stoptime = true;
+  info.daqdisk = 2;
   return info;
 }
 
-// Returns the number of times the run has been processed before
-static unsigned int get_ntimesprocessed(mysqlpp::Connection * myconn)
-{
-  if(myconn == NULL) return 0;
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT Path FROM OV_ebuilder WHERE Run_number = '%s';",
-          RunNumber.c_str());
-  mysqlpp::StoreQueryResult res = myconn->query(query_string).store();
-  return res.num_rows();
-}
-
-// Returns the directory where this run was processed the first time in this
-// configuration, or the empty string if it never has been
-static string get_same_config_path(mysqlpp::Connection * myconn)
-{
-  if(myconn == NULL) return "";
-
-  char query_string[BUFSIZE];
-  sprintf(query_string, "SELECT Path FROM OV_ebuilder "
-    "WHERE Run_number = '%s' and SW_Threshold = '%04d' and "
-    "SW_TriggerMode = '%01d' and Res1 = '00' and Res2 = '00' "
-    "ORDER BY Entry;", RunNumber.c_str(), Threshold, (int)EBTrigMode);
-
-  mysqlpp::StoreQueryResult res = myconn->query(query_string).store();
-
-  if(res.num_rows() == 0) return "";
-  else return (string)res[0][0];
-}
-
-// Connects to the database and return a pointer to it.  Or, XXX, actually at
-// the moment does not because I don't have one and am not yet sure if I want
-// one, so return NULL to indicate that we don't have one.
-static mysqlpp::Connection * establish_mysql_connection_or_not()
-{
-  return NULL;
-
-  // false to not throw exceptions on errors
-  mysqlpp::Connection * myconn = new mysqlpp::Connection(false);
-
-  char DCDatabase_path[BUFSIZE];
-
-  // XXX we don't have these environment variables.
-  sprintf(DCDatabase_path, "%s/config/DCDatabase.config", getenv("DCONLINE_PATH"));
-
-  sprintf(server, "%s", config_string(DCDatabase_path, "DCDB_SERVER_HOST"));
-  sprintf(username, "%s", config_string(DCDatabase_path, "DCDB_OV_USER"));
-  sprintf(password, "%s", config_string(DCDatabase_path, "DCDB_OV_PASSWORD"));
-  sprintf(database, "%s", config_string(DCDatabase_path, "DCDB_OV_DBNAME"));
-
-  if(!myconn->connect(database, server, username, password))
-    die_with_log("Cannot connect to MySQL database %s at %s\n",
-      database, server);
-  return myconn;
-}
-
-// Database tables read from: OV_runsummary; whatever table OV_runsummary names
-// in config_table, such as online400; and OV_ebuilder.
 static void read_summary_table()
 {
-  mysqlpp::Connection * myconn = establish_mysql_connection_or_not();
-
-  const char * const config_table = get_config_table_name(myconn);
-
-  const vector<int>
-    usbserials = get_distinct_usb_serials(myconn, config_table);
+  const vector<int> usbserials = get_distinct_usb_serials();
   numUSB = usbserials.size();
 
   map<int, int> usbmap; // Maps USB number to numerical ordering of all USBs
@@ -1068,7 +687,7 @@ static void read_summary_table()
   }
 
   // Load the time offsets for these boards
-  const vector<usb_sbop> sbops = get_sbops(myconn, config_table);
+  const vector<usb_sbop> sbops = get_sbops();
 
   // Create map of UBS_serial to array of pmt board offsets
   for(unsigned int i = 0; i < sbops.size(); i++) {
@@ -1082,8 +701,8 @@ static void read_summary_table()
     Datamap[i] = usbmap[usbserials[i]];
 
   // Count the number of boards in this setup
-  const int totalboards = board_count(myconn, config_table).first;
-  const int max_board   = board_count(myconn, config_table).second;
+  const int totalboards = board_count().first;
+  const int max_board   = board_count().second;
   overflow = new bool[max_board+1];
   maxcount_16ns_hi = new long int[max_board+1];
   maxcount_16ns_lo = new long int[max_board+1];
@@ -1091,10 +710,8 @@ static void read_summary_table()
   memset(maxcount_16ns_hi, 0, (max_board+1)*sizeof(long int));
   memset(maxcount_16ns_lo, 0, (max_board+1)*sizeof(long int));
 
-  // Count the number of PMTs in this setup
-  if((int)sbops.size() != totalboards) // config table has duplicate entries
-    die_with_log("Found duplicate pmtboard_u entries in table %s\n",
-            config_table);
+  if((int)sbops.size() != totalboards)
+    die_with_log("Found duplicate pmtboard_u entries\n");
 
   // This is a temporary internal mapping used only by the EBuilder
   for(unsigned int i = 0; i < sbops.size(); i++)
@@ -1102,7 +719,7 @@ static void read_summary_table()
 
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
-  const some_run_info runinfo = get_some_run_info(myconn);
+  const some_run_info runinfo = get_some_run_info();
 
   // Set the Data Folder and Ouput Dir
   const string OutputDir = OutBaseDir + "/";
@@ -1116,37 +733,16 @@ static void read_summary_table()
 
   // Determine run mode
   vector<string> initial_files;
-  if(runinfo.has_ebcomment) { // EBcomment filled each successful write attempt
-    // False if non-baseline files are found
-    if(GetDir(BinaryDir, initial_files)) {
-      if(errno)
-        die_with_log("Error (%s) opening directory %s\n", strerror(errno),
-                     BinaryDir.c_str());
-      if(runinfo.has_stoptime){ // stop_time has been filled and so was a successful run
-        EBRunMode = kReprocess;
-      }
-      else { // stop_time has not been filled. DAQ could be waiting in STARTED_S
-        EBRunMode = kRecovery;
-        EBcomment = runinfo.ebcomment;
-      }
-    }
-    else {
-      EBRunMode = kRecovery;
-      EBcomment = runinfo.ebcomment;
-    }
-  }
   log_msg(LOG_INFO, "OV EBuilder Run Mode: %d\n", EBRunMode);
 
   if(EBRunMode == kRecovery && runinfo.has_ebsubrun)
     SubRunCounter = timestampsperoutput*runinfo.ebsubrun;
 
-  bool Repeat = false;
-
   // Figure out run mode, do file handling appropriately
   if(EBRunMode == kReprocess) {
     umask(0);
 
-    const unsigned int ntimesprocessed = get_ntimesprocessed(myconn);
+    const unsigned int ntimesprocessed = 0; // XXX probably drop this too
 
     if(ntimesprocessed == 0) // Can't find run in OV_ebuilder
       die_with_log("EBuilder did not finish processing run %s. "
@@ -1164,48 +760,6 @@ static void read_summary_table()
       }
     }
 
-    const string same_config_path = get_same_config_path(myconn);
-    if(myconn != NULL) myconn->disconnect();
-
-    // Run has already been reprocessed with same configuration
-    if(same_config_path != "") {
-      Repeat = true;
-      log_msg(LOG_WARNING, "Same reprocessing configuration found for "
-        "run %s at %s. Deleting...\n", RunNumber.c_str(), same_config_path.c_str());
-
-      // Clean up old directory
-      vector<string> old_files;
-      string tempfile;
-      string tempdir = same_config_path + "Run_" + RunNumber + "/processed";
-      if(GetDir(tempdir, old_files, true))
-        if(errno)
-          die_with_log("Error (%s) opening directory %s\n",
-                  strerror(errno), tempdir.c_str());
-
-      for(int m = 0; m<(int)old_files.size(); m++) {
-        tempfile = tempdir + "/" + old_files[m];
-        if(remove(tempfile.c_str()))
-          die_with_log("Error deleting file %s\n", tempfile.c_str());
-      }
-      if(rmdir(tempdir.c_str()))
-        die_with_log("Error deleting folder %s\n", tempdir.c_str());
-      old_files.clear();
-
-      tempdir = same_config_path + "Run_" + RunNumber;
-      if(GetDir(tempdir, old_files, true))
-        if(errno)
-          die_with_log("Error (%s) opening directory %s\n", strerror(errno),
-                       tempdir.c_str());
-
-      for(int m = 0; m<(int)old_files.size(); m++) {
-        tempfile = tempdir + "/" + old_files[m];
-        if(remove(tempfile.c_str()))
-          die_with_log("Error deleting file %s\n", tempfile.c_str());
-      }
-      if(rmdir(tempdir.c_str()))
-        die_with_log("Error deleting folder %s\n", tempdir.c_str());
-    }
-
     // Create folder based on parameters
     OutputFolder = cpp_sprintf("%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
       OutputDir.c_str(), RunNumber.c_str(), (int)EBTrigMode, Threshold, 0, 0);
@@ -1217,9 +771,6 @@ static void read_summary_table()
         OutputFolder.c_str());
     }
   }
-
-  if(!Repeat && !write_ebsummary())
-    die_with_log("!Repeat && !write_ebsummary\n");
 
   if(EBRunMode != kNormal) {
     // Move some decoded OV binary files for processing
@@ -1296,67 +847,11 @@ static void read_summary_table()
   }
 }
 
-static bool write_summary_table(long int lasttime, int subrun)
+static bool run_has_ended()
 {
-  return true; // XXX skip database interaction
-
-  mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-  mysqlpp::StoreQueryResult res;
-
-  if(!myconn.connect(database, server, username, password)) {
-    log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database, server);
-    return false;
-  }
-
-  char query_string[BUFSIZE];
-
-  sprintf(query_string, "UPDATE OV_runsummary SET EBcomment = '%ld', "
-    "EBsubrunnumber = '%d' WHERE Run_number = '%s';",
-    lasttime, subrun, RunNumber.c_str());
-  mysqlpp::Query query = myconn.query(query_string);
-  if(!query.execute()) {
-    log_msg(LOG_WARNING, "MySQL query (%s) error: %s\n", query_string, query.error());
-    myconn.disconnect();
-    return false;
-  }
-
-  myconn.disconnect();
-  return true;
-}
-
-static bool read_stop_time()
-{
-  mysqlpp::Connection myconn(false); // false to not throw exceptions on errors
-  mysqlpp::StoreQueryResult res;
-
-  if(!myconn.connect(database, server, username, password)) {
-    log_msg(LOG_WARNING, "Cannot connect to MySQL database %s at %s\n",
-      database, server);
-    return false;
-  }
-
-  char query_string[BUFSIZE];
-
-  sprintf(query_string, "SELECT stop_time FROM OV_runsummary "
-    "WHERE Run_number = '%s' ORDER BY start_time DESC;", RunNumber.c_str());
-  mysqlpp::Query query = myconn.query(query_string);
-  res = query.store();
-  if(res.num_rows() < 1) {
-    log_msg(LOG_ERR, "MySQL query (%s) error: %s\n", query_string, query.error());
-    myconn.disconnect();
-    return false;
-  }
-
-  if(res[0][0].is_null()) {
-    myconn.disconnect();
-    return false;
-  }
-
-  log_msg(LOG_INFO, "Found MySQL stop time for run: %s\n", RunNumber.c_str());
-  myconn.disconnect();
-
-  return true;
+  // Some test for whether the run has ended, perhaps the appearance
+  // of a file that says so in the directory we're reading.
+  return false;
 }
 
 static bool write_endofrun_block(string myfname, int data_fd)
@@ -1389,7 +884,6 @@ static bool write_endofrun_block(string myfname, int data_fd)
 int main(int argc, char **argv)
 {
   if(!parse_options(argc, argv)) {
-    write_ebretval(-1);
     return 127;
   }
 
@@ -1413,16 +907,17 @@ int main(int argc, char **argv)
   read_summary_table();
 
   // Load baseline data
-  time_t timeout = time(0);
-  while(!GetBaselines()) { // Get baselines
-    if((int)difftime(time(0), timeout) > MAXTIME) {
-      log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
-        MAXTIME);
-      write_ebretval(-1);
-      return 127;
-    }
-    else{
-      sleep(2); // FixME: optimize? -- never done for Double Chooz -- needed?
+  {
+    const time_t oldtime = time(0);
+    while(!GetBaselines()) { // Get baselines
+      if((int)difftime(time(0), oldtime) > MAXTIME) {
+        log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
+          MAXTIME);
+        return 127;
+      }
+      else{
+        sleep(2);
+      }
     }
   }
 
@@ -1432,16 +927,18 @@ int main(int argc, char **argv)
 
   // Locate existing binary data and create output folder
   OutputFolder = OutputFolder + "Run_" + RunNumber;
-  timeout = time(0);
 
-  while(!LoadRun()) {
-    if((int)difftime(time(0), timeout) > MAXTIME) {
-      log_msg(LOG_CRIT, "Error: Binary data not found in the last %d seconds.\n",
-        MAXTIME);
-      write_ebretval(-1);
-      return 127;
+  {
+    const time_t oldtime = time(0);
+
+    while(!LoadRun()) {
+      if((int)difftime(time(0), oldtime) > MAXTIME) {
+        log_msg(LOG_CRIT, "Error: Binary data not found in the last %d seconds.\n",
+          MAXTIME);
+        return 127;
+      }
+      else sleep(1);
     }
-    else sleep(1);
   }
 
   // This is the main Event Builder loop
@@ -1452,21 +949,20 @@ int main(int argc, char **argv)
     for(unsigned int i=0; i < numUSB; i++) {
 
       while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]))) {
-        timeout = time(0);
+        const time_t oldtime = time(0);
 
         int status = 0;
         while((status = LoadAll()) < 1){ // Try to find new files for each USB
           if(status == -1) {
-            write_ebretval(-1);
             return 127;
           }
           log_msg(LOG_INFO, "Files are not ready...\n");
           goto out; // XXX Escape here and we can get files built
-          if((int)difftime(time(0), timeout) > ENDTIME &&
-             (read_stop_time() || (int)difftime(time(0), timeout) > MAXTIME)) {
+          if((int)difftime(time(0), oldtime) > ENDTIME &&
+             (run_has_ended() || (int)difftime(time(0), oldtime) > MAXTIME)) {
             while(!write_endofrun_block(fname, dataFile)) sleep(1);
 
-            if((int)difftime(time(0), timeout) > MAXTIME)
+            if((int)difftime(time(0), oldtime) > MAXTIME)
               log_msg(LOG_ERR, "No data found for %d seconds!  "
                   "Closing run %s without finding stop time on MySQL\n",
                   MAXTIME, RunNumber.c_str());
@@ -1474,7 +970,6 @@ int main(int argc, char **argv)
               log_msg(LOG_INFO, "Event Builder has finished processing run %s\n",
                 RunNumber.c_str());
 
-            write_ebretval(1);
             return 0;
           }
           sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
@@ -1483,7 +978,8 @@ int main(int argc, char **argv)
         for(unsigned int j=0; j<numUSB; j++) // Load all files in at once
           pthread_create(&gThreads[j], NULL, decode, (void*) j);
 
-        joiner(numUSB);
+        for(unsigned int n = 0; n < numUSB; n++)
+          pthread_join(gThreads[n], NULL);
 
         // Rename files
         for(unsigned int j = 0; j<numUSB; j++) {
@@ -1586,7 +1082,6 @@ int main(int argc, char **argv)
       if(close(dataFile) < 0) {
         log_msg(LOG_ERR,
           "Fatal Error: Could not close output data file in recovery mode!\n");
-        write_ebretval(-1);
         return 127;
       }
     }
@@ -1595,15 +1090,7 @@ int main(int argc, char **argv)
       if((SubRunCounter % timestampsperoutput == 0) && dataFile) {
         if(close(dataFile) < 0) {
           log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
-          write_ebretval(-1);
           return 127;
-        }
-        else {
-          while(!write_summary_table(OVUSBStream[0].GetTOLUTC(),
-                                     SubRunCounter/timestampsperoutput)) {
-            log_msg(LOG_NOTICE, "Error writing to OV_runsummary table.\n");
-            sleep(1);
-          }
         }
       }
     }
@@ -1616,6 +1103,5 @@ int main(int argc, char **argv)
 
   log_msg(LOG_WARNING, "Normally this program should not terminate like this...\n");
 
-  write_ebretval(1);
   return 0;
 }

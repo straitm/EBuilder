@@ -9,12 +9,11 @@ INC =  -I./include
 
 PREFIX=/home/strait
 
-CXXFLAGS      = -O2 -Wunused -Wall -Wextra $(INC) \
-                -I/usr/include/mysql -I$(PREFIX)/include/mysql++
-LDFLAGS       = $(INC) # does nothing?
+CXXFLAGS      = -O2 -Wunused -Wall -Wextra $(INC)
+LDFLAGS       = -pthread
 SOFLAGS       = -shared
 
-LIBS         += -L/usr/lib64/mysql -L$(PREFIX)/lib -lmysqlclient -lmysqlpp
+LIBS         += -L$(PREFIX)/lib
 MAIN=EventBuilder.cxx
 TARGET=$(MAIN:%.cxx=$(BINDIR)/%)
 
