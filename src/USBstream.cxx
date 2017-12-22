@@ -29,7 +29,6 @@ USBstream::USBstream()
   myvec.reserve(0xffff);
   myit=myvec.begin();
   IsOpen = false;
-  IsFanUSB = false;
   BothLayerThresh = false;
   UseThresh = false;
   for(int i = 0; i < 32; i++) { // Map of adjacent channels
@@ -295,27 +294,7 @@ void USBstream::check_data()
           par ^= data[m];
           if(m<len) {
             if(m<4) {
-              // Handle trigger box packets
-              if(m==3 && IsFanUSB) {
-                if(module >= 0 && module <= 63) {
-                  int low = (data[m] & 0xffff) - offset[module];
-                  if(low < 0) {
-                    int high = packet.back() - 1;
-
-                    // sync packets come every 2^29 clock counts
-                    if(high < 0) high += (1 << 13);
-
-                    packet.pop_back(); packet.push_back(high);
-                    low += (1 << 16);
-                    packet.push_back(low);
-                  }
-                  else { packet.push_back(low); }
-                }
-                else { packet.push_back(data[m]); }
-              }
-              else {
-                packet.push_back(data[m]);
-              }
+              packet.push_back(data[m]);
             }
             else {
               if(type) {
@@ -399,20 +378,6 @@ void USBstream::check_data()
                     // also satisfied the mu-like double criteria.
                     // We search for these duplicate trigger box packets and
                     // make an OR of the hit data
-                    if(IsFanUSB) {
-                      // packets should be separated by no more than 3 clock cycles
-                      if(!LessThan(*InsertionSortIt,packet,3)) {
-                        // packets should come from the same module
-                        if(((packet.at(0) >> 8) & 0x7f) ==
-                            ((InsertionSortIt->at(0) >> 8) & 0x7f)) {
-                          // Trigger box packets all have a fixed size
-                          (*InsertionSortIt)[7] |= packet[7];
-                          (*InsertionSortIt)[8] |= packet[8];
-                          found = true;
-                          break;
-                        }
-                      }
-                    }
                     myvec.insert(InsertionSortIt+1,packet);
                     found = true;
                     break;

@@ -18,7 +18,6 @@ public:
 
   void SetUSB(int usb) { myusb=usb; }
   void SetThresh(int thresh, int threshtype);
-  void SetIsFanUSB() { IsFanUSB = true; }
   void SetTOLUTC(uint64_t tolutc) { mytolutc=tolutc; }
   void SetOffset(int *off);
   void SetBaseline(const int base[64 /* maxModules */][64 /* numChannels */]);
@@ -26,7 +25,6 @@ public:
   void Reset();
 
   int GetUSB() const { return myusb; }
-  bool GetIsFanUSB() { return IsFanUSB; }
   int GetNPMT() const { return mynpmt; }
   const char* GetFileName() { return myfilename.c_str(); }
   uint64_t GetTOLUTC() const { return mytolutc; }
@@ -49,7 +47,6 @@ private:
   std::string myfilename;
   std::fstream *myFile;
   bool IsOpen;
-  bool IsFanUSB;
   bool BothLayerThresh;
   bool UseThresh;
   DataVector myvec;
@@ -124,8 +121,8 @@ struct OVEventHeader {
 struct OVDataPacketHeader {
   bool writeout(const int fd)
   {
-    const uint16_t magic = htons(0x444D); // "MD"
-    if(sizeof(magic) != write(fd, &magic, sizeof magic)) return false;
+    const uint8_t magic = 0x4D; // "M"
+    if(1 != write(fd, &magic, 1)) return false;
 
     if(1 != write(fd, &nHits, 1)) return false;
 

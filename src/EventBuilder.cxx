@@ -1,7 +1,3 @@
-// TODO: Cut out everything about fan-in boards once we've tested with
-// some Double Chooz data. As per Camillo: "in protodune no fan in boxes
-// so just skip that."
-
 #include "USBstream-TypeDef.h"
 #include "USBstream.h"
 #include "USBstreamUtils.h"
@@ -84,13 +80,12 @@ static char database[BUFSIZE] = {0};
 
 // Set in read_summary_table() from database information and used throughout
 static unsigned int numUSB = 0;
-static unsigned int num_nonFanUSB = 0;
-static map<int, int> Datamap; // Maps numerical ordering of non-Fan-in
-                             // USBs to all numerical ordering of all USBs
+static map<int, int> Datamap; // XXX Maps numerical ordering of
+                              // USBs to all numerical ordering of all USBs
 static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
-static map<int, int> PMTUniqueMap; // Maps 1000*USB_serial + board_number
-                                  // to pmtboard_u in MySQL table
-static USBstream OVUSBStream[maxUSB]; // An array of USBstream objects
+static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
+                                        // to pmtboard_u in MySQL table
+static USBstream OVUSBStream[maxUSB];
 static string BinaryDir; // Path to data
 static string OutputFolder; // Default output data path hard-coded
 static long int EBcomment = 0;
@@ -666,7 +661,7 @@ static bool GetBaselines()
       if(f->find("baseline") != string::npos)
         baseline_files.push_back(*f);
 
-    if(baseline_files.size() != num_nonFanUSB) {
+    if(baseline_files.size() != numUSB) {
       log_msg(LOG_ERR, "Error: Baseline file count (%lu) != "
         "numUSB (%u) in directory %s\n", (long int)baseline_files.size(), numUSB,
          BinaryDir.c_str());
@@ -677,7 +672,7 @@ static bool GetBaselines()
   printf("Processing baselines...\n");
 
   // Set USB numbers for each OVUSBStream and load baseline files
-  for(unsigned int i = 0; i < num_nonFanUSB; i++) {
+  for(unsigned int i = 0; i < numUSB; i++) {
     // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
       log_msg(LOG_ERR, "Error: USB number unassigned while getting baselines\n");
@@ -687,17 +682,15 @@ static bool GetBaselines()
       return false; // Load baseline file for data streams
   }
 
-  // Decode all files at once and load into memory
-  // XXX Why does this use threads?  We can't go on until they're all done
-  // and threads does not speed it up.
-  for(unsigned int j=0; j<num_nonFanUSB; j++) // Load all files in at once
-    pthread_create(&gThreads[Datamap[j]], NULL, handle, (void*) Datamap[j]);
-
-  joiner(num_nonFanUSB);
+  // Decode all files and load into memory
+  for(unsigned int j = 0; j < numUSB; j++){
+    log_msg(LOG_INFO, "Decoding baseline %d\n", Datamap[j]),
+    decode((void*) Datamap[j]);
+  }
 
   int baselines[maxModules][numChannels] = { { } };
 
-  for(unsigned int i = 0; i < num_nonFanUSB; i++) {
+  for(unsigned int i = 0; i < numUSB; i++) {
     DataVector BaselineData;
     OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
     CalculatePedestal(baselines, BaselineData);
@@ -1082,24 +1075,14 @@ static void read_summary_table()
   const char * const config_table = get_config_table_name(myconn);
 
   const vector<int>
-    usbserials       = get_distinct_usb_serials(myconn, config_table, false),
-    nonfanin_serials = get_distinct_usb_serials(myconn, config_table, true);
-  numUSB        = usbserials.size();
-  num_nonFanUSB = nonfanin_serials.size();
+    usbserials = get_distinct_usb_serials(myconn, config_table);
+  numUSB = usbserials.size();
 
   map<int, int> usbmap; // Maps USB number to numerical ordering of all USBs
   for(unsigned int i = 0; i < usbserials.size(); i++) {
     usbmap[usbserials[i]] = i;
     OVUSBStream[i].SetUSB(usbserials[i]);
-
-    // Identify the fan-in USBs. I think no code cares, though.
-    if(find(nonfanin_serials.begin(), nonfanin_serials.end(), usbserials[i])
-       == nonfanin_serials.end())
-      OVUSBStream[i].SetIsFanUSB();
   }
-
-  for(unsigned int i = 0; i < nonfanin_serials.size(); i++)
-    Datamap[i] = usbmap[nonfanin_serials[i]];
 
   // Load the time offsets for these boards
   const vector<usb_sbop> sbops = get_sbops(myconn, config_table);
@@ -1117,6 +1100,9 @@ static void read_summary_table()
       os != PMTOffsets.end(); os++)
     OVUSBStream[usbmap[os->first]].SetOffset(os->second);
 
+  for(unsigned int i = 0; i < usbserials.size(); i++)
+    Datamap[i] = usbmap[usbserials[i]];
+
   // Count the number of boards in this setup
   const int totalboards = board_count(myconn, config_table).first;
   const int max_board   = board_count(myconn, config_table).second;
@@ -1127,7 +1113,7 @@ static void read_summary_table()
   memset(maxcount_16ns_hi, 0, (max_board+1)*sizeof(long int));
   memset(maxcount_16ns_lo, 0, (max_board+1)*sizeof(long int));
 
-  // Count the number of PMT and Fan-in boards in this setup
+  // Count the number of PMTs in this setup
   if((int)sbops.size() != totalboards) // config table has duplicate entries
     die_with_log("Found duplicate pmtboard_u entries in table %s\n",
             config_table);
@@ -1463,7 +1449,7 @@ int main(int argc, char **argv)
   }
 
   // Set Thresholds. Only for data streams
-  for(unsigned int i = 0; i < num_nonFanUSB; i++)
+  for(unsigned int i = 0; i < numUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
 
   // Locate existing binary data and create output folder
