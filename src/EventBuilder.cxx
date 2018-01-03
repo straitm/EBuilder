@@ -39,8 +39,8 @@ struct usb_sbop{
 };
 
 struct some_run_info{
-  int daqdisk, ebcomment, ebsubrun;
-  bool has_ebcomment, has_ebsubrun, has_stoptime;
+  int daqdisk, ebsubrun;
+  bool has_ebsubrun, has_stoptime;
 };
 
 // Consts
@@ -80,7 +80,6 @@ static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
 static USBstream OVUSBStream[maxUSB];
 static string BinaryDir; // Path to data
 static string OutputFolder; // Default output data path hard-coded
-static long int EBcomment = 0;
 static int SubRunCounter = 0;
 
 // *Size* set in read_summary_table()
@@ -655,7 +654,6 @@ static some_run_info get_some_run_info()
 {
   some_run_info info;
   memset(&info, 0, sizeof(some_run_info));
-  info.has_ebcomment = false;
   info.has_ebsubrun = false;
   info.has_stoptime = true;
   info.daqdisk = 2;
