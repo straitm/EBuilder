@@ -444,7 +444,7 @@ static bool parse_options(int argc, char **argv)
          "-t : offline threshold (ADC counts) to apply\n"
          "     [default: 0 (no software threshold)]\n"
          "-T : offline trigger mode (0: NONE, 1: OR, 2: AND)\n"
-         "     [default: 0 (No trigger pattern between layers)]\n"
+         "     [default: 2]\n"
          "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
          "-e : Base output directory, default .\n",
          argv[0]);
