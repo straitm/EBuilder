@@ -443,8 +443,10 @@ static bool parse_options(int argc, char **argv)
          "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
          "-t : offline threshold (ADC counts) to apply\n"
          "     [default: 0 (no software threshold)]\n"
-         "-T : offline trigger mode (0: NONE, 1: OR, 2: AND)\n"
-         "     [default: 2]\n"
+         "-T : offline trigger mode\n"
+         "     0: No threshold\n"
+         "     1: Per-channel threshold\n"
+         "     2: [default] Overlapping pair with both channels over threshold\n"
          "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
          "-e : Base output directory, default .\n",
          argv[0]);
