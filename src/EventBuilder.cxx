@@ -397,6 +397,7 @@ static void BuildEvent(const DataVector & in_packets,
 
 static bool parse_options(int argc, char **argv)
 {
+  bool option_t_used = false;
   if(argc <= 1) goto fail;
 
   char c;
@@ -408,12 +409,15 @@ static bool parse_options(int argc, char **argv)
     case 'r': strcpy(buf, optarg); RunNumber = buf; break;
     case 'H': strcpy(buf, optarg); OVDAQHost = buf; break;
 
-    case 't': Threshold = atoi(optarg); break;
+    case 't': Threshold = atoi(optarg); option_t_used = true; break;
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
     case 'e': strcpy(buf, optarg); OutBaseDir = buf; break;
     case 'h':
     default:  goto fail;
     }
+  }
+  if(option_t_used && EBTrigMode == kNone){
+    printf("Warning: threshold given with -t ignored with -T 0\n");
   }
   if(optind < argc){
     printf("Unknown options given\n");
