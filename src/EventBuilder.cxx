@@ -21,7 +21,6 @@ using std::map;
 
 #define BUFSIZE 1024
 
-enum RunMode {kNormal, kRecovery, kReprocess};
 enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 enum packet_type { kOVR_DISCRIM = 0, kOVR_ADC = 1, kOVR_TRIGBOX = 2};
 
@@ -67,7 +66,6 @@ static vector<string> files; // vector to hold file names
 // Set in parse_options()
 static int Threshold = 73; //default 1.5 PE threshold
 static string RunNumber = "";
-static string OVRunType = "P";
 static string OVDAQHost = "dcfovdaq";
 static string OutBaseDir = "."; // output directory
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
@@ -89,9 +87,6 @@ static int SubRunCounter = 0;
 static bool *overflow; // Keeps track of sync overflows for all boards
 static long int *maxcount_16ns_lo; // Keeps track of max clock count
 static long int *maxcount_16ns_hi; // for sync overflows for all boards
-
-// set in read_summary_table() and main()
-static RunMode EBRunMode = kNormal;
 
 
 static void *decode(void *ptr) // This defines a thread to decode files
@@ -201,23 +196,13 @@ static bool LoadRun()
   const string TempProcessedOutput = OutputFolder + "/processed";
   umask(0);
   if(mkdir(OutputFolder.c_str(), 0777)) {
-    if(EBRunMode != kRecovery) {
-      log_msg(LOG_CRIT, "Error creating output file %s\n", OutputFolder.c_str());
-      exit(1);
-    }
+    log_msg(LOG_CRIT, "Error creating output file %s\n", OutputFolder.c_str());
+    exit(1);
   }
   else if(mkdir(TempProcessedOutput.c_str(), 0777)) {
-    if(EBRunMode != kRecovery) {
-      log_msg(LOG_CRIT, "Error creating output file %s\n",
-        TempProcessedOutput.c_str());
-      exit(1);
-    }
-  }
-  else { // FixMe: To optimize (logic) (Was never done for Double Chooz - needed?)
-    if(EBRunMode == kRecovery) {
-      log_msg(LOG_CRIT, "Output dirs did not already exist in recovery mode.\n");
-      exit(1);
-    }
+    log_msg(LOG_CRIT, "Error creating output file %s\n",
+      TempProcessedOutput.c_str());
+    exit(1);
   }
 
   return true;
@@ -234,14 +219,13 @@ static int LoadAll()
     return r;
   }
 
-  if(EBRunMode != kReprocess) {
-    // FixME: Is 2*numUSB sufficient to guarantee a match?
-    if(files.size() <= 3*numUSB) {
-      files.clear();
-      if(GetDir(BinaryDir, files))
-        return 0;
-    }
+  // FixME: Is 2*numUSB sufficient to guarantee a match?
+  if(files.size() <= 3*numUSB) {
+    files.clear();
+    if(GetDir(BinaryDir, files))
+      return 0;
   }
+
   if(files.size() < numUSB)
     return 0;
 
@@ -416,14 +400,13 @@ static bool parse_options(int argc, char **argv)
   if(argc <= 1) goto fail;
 
   char c;
-  while ((c = getopt (argc, argv, "r:t:T:R:H:e:h")) != -1) {
+  while ((c = getopt (argc, argv, "r:t:T:H:e:h")) != -1) {
     char buf[BUFSIZE];
 
     switch (c) {
     // XXX no overflow protection
     case 'r': strcpy(buf, optarg); RunNumber = buf; break;
     case 'H': strcpy(buf, optarg); OVDAQHost = buf; break;
-    case 'R': strcpy(buf, optarg); OVRunType = buf;  break;
 
     case 't': Threshold = atoi(optarg); break;
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
@@ -454,7 +437,7 @@ static bool parse_options(int argc, char **argv)
 
   fail:
   printf("Usage: %s -r <run_number> [-d <data_disk>]\n"
-         "      [-t <offline_threshold>] [-T <offline_trigger_mode>] [-R <run_type>]\n"
+         "      [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
          "      [-H <OV_DAQ_data_mount_point>] [-e <EBuilder_output_disk>]\n"
          "-r : expected run # for incoming data\n"
          "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
@@ -462,8 +445,6 @@ static bool parse_options(int argc, char **argv)
          "     [default: 0 (no software threshold)]\n"
          "-T : offline trigger mode (0: NONE, 1: OR, 2: AND)\n"
          "     [default: 0 (No trigger pattern between layers)]\n"
-         "-R : OV run type (P: physics, C: calib, D: debug)\n"
-         "     [default: P]\n"
          "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
          "-e : Base output directory, default .\n",
          argv[0]);
@@ -729,122 +710,6 @@ static void read_summary_table()
   const string datadir =
     cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), runinfo.daqdisk, "OVDAQ/DATA");
   BinaryDir = datadir + "/Run_" + RunNumber + "/binary/";
-  const string decoded_dir = datadir + "/Run_" + RunNumber + "/decoded/";
-
-  // Determine run mode
-  vector<string> initial_files;
-  log_msg(LOG_INFO, "OV EBuilder Run Mode: %d\n", EBRunMode);
-
-  if(EBRunMode == kRecovery && runinfo.has_ebsubrun)
-    SubRunCounter = timestampsperoutput*runinfo.ebsubrun;
-
-  // Figure out run mode, do file handling appropriately
-  if(EBRunMode == kReprocess) {
-    umask(0);
-
-    const unsigned int ntimesprocessed = 0; // XXX probably drop this too
-
-    if(ntimesprocessed == 0) // Can't find run in OV_ebuilder
-      die_with_log("EBuilder did not finish processing run %s. "
-        "Run recovery mode first.\n", RunNumber.c_str());
-
-    if(ntimesprocessed == 1) { // Run has never been reprocessed
-      OutputFolder = cpp_sprintf("%sREP/Run_%s", OutputDir.c_str(), RunNumber.c_str());
-      if(mkdir(OutputFolder.c_str(), 0777)) {
-        // XXX should use perror here and elsewhere to report all kinds of
-        // errors, not just the most common, automatically
-        if(errno != EEXIST)
-          die_with_log("Error (%d) creating output dir %s\n",
-                  errno, OutputFolder.c_str());
-        log_msg(LOG_WARNING, "Output dir %s already exists.\n", OutputFolder.c_str());
-      }
-    }
-
-    // Create folder based on parameters
-    OutputFolder = cpp_sprintf("%sREP/Run_%s/T%dADC%04dP1%02dP2%02d/",
-      OutputDir.c_str(), RunNumber.c_str(), (int)EBTrigMode, Threshold, 0, 0);
-    if(mkdir(OutputFolder.c_str(), 0777)) {
-      if(errno != EEXIST)
-        die_with_log("Error (%d) creating output folder %s\n",
-                errno, OutputFolder.c_str());
-      log_msg(LOG_WARNING, "Output folder %s already exists.\n",
-        OutputFolder.c_str());
-    }
-  }
-
-  if(EBRunMode != kNormal) {
-    // Move some decoded OV binary files for processing
-    initial_files.clear();
-    if(GetDir(decoded_dir, initial_files, true)) {
-      if(errno)
-        die_with_log("Error (%s) opening directory %s\n", strerror(errno),
-                     decoded_dir.c_str());
-      die_with_log("No decoded files found in directory %s\n",
-        decoded_dir.c_str());
-    }
-    sort(initial_files.begin(), initial_files.end());
-
-    // Determine files to rename
-    vector<string>::iterator fname_begin=initial_files.begin();
-    const string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx.done
-    if(fname_begin->find(fdelim) == fname_begin->npos)
-      die_with_log("Error: Cannot find '_' in file name\n");
-    const size_t fname_it_delim = fname_begin->find(fdelim);
-
-    vector<string> myfiles[maxUSB];
-    map<int, int> mymap;
-    int mapindex = 0;
-    for(int k = 0; k<(int)initial_files.size(); k++) {
-      string fusb = (initial_files[k]).substr(fname_it_delim+1, 2);
-      const int iusb = (int)strtol(fusb.c_str(), NULL, 10);
-      if(!mymap.count(iusb)) mymap[iusb] = mapindex++;
-      myfiles[mymap[iusb]].push_back(initial_files[k]);
-    }
-
-    vector<string> files_to_rename;
-    if(EBRunMode == kRecovery) {
-      for(unsigned int j = 0; j < numUSB; j++) {
-        const int mysize = myfiles[j].size();
-        const int avgsize = initial_files.size()/numUSB;
-        if(mysize > 0)
-          files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 1));
-        if(mysize > 1)
-          files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 2));
-        if(mysize > 2 && mysize > avgsize)
-          files_to_rename.push_back(decoded_dir + myfiles[j].at(mysize - 3));
-      }
-    }
-    else { // Rename all files if EBRunMode == kReprocess
-      for(unsigned int j = 0; j < initial_files.size(); j++)
-        files_to_rename.push_back(decoded_dir + initial_files[j]);
-    }
-
-    // Rename files
-    for(int i = 0; i<(int)files_to_rename.size(); i++) {
-      string fname = files_to_rename[i];
-      {
-        const size_t pos = fname.find("decoded");
-        if(pos == string::npos)
-          die_with_log("Unexpected decoded-data file name: %s\n",
-            fname.c_str());
-        fname.replace(pos, sizeof("decoded")-1, "binary");
-      }
-      {
-        const size_t pos = fname.find(".done");
-        if(pos == string::npos)
-          die_with_log("Unexpected decoded-data file name: %s\n",
-            fname.c_str());
-        fname.replace(pos, sizeof(".done")-1, "");
-      }
-
-      errno = 0;
-      while(rename(files_to_rename[i].c_str(), fname.c_str())) {
-        log_msg(LOG_ERR, "Could not rename decoded data file: %s\n",
-                strerror(errno));
-        sleep(1);
-      }
-    }
-  }
 }
 
 static bool run_has_ended()
@@ -858,7 +723,7 @@ static bool write_endofrun_block(string myfname, int data_fd)
 {
   // XXX Why does this part of the code, in particular, have a retry loop
   // for writing to the file?
-  if(EBRunMode == kRecovery || SubRunCounter % timestampsperoutput == 0) {
+  if(SubRunCounter % timestampsperoutput == 0) {
     printf("Recovery or SubRunCounter%%timestampsperoutput == 0, "
            "whatever that means!\n");
     data_fd = open_file(myfname);
@@ -1002,22 +867,10 @@ int main(int argc, char **argv)
     }
 
     // Open output data file
-    // This should handle re-processing eventually
-    if(EBRunMode == kRecovery) {
-      if(OVUSBStream[0].GetTOLUTC() <= (unsigned long int)EBcomment) {
-        printf("Time stamp to process: %ld\n", OVUSBStream[0].GetTOLUTC());
-        printf("Recovery mode waiting to exceed time stamp %ld\n", EBcomment);
-        dataFile = open_file("/dev/null");
-      }
-      else {
-        printf("Run has been recovered!\n");
-        EBRunMode = kNormal;
-      }
-    }
-    if(EBRunMode != kRecovery && SubRunCounter % timestampsperoutput == 0) {
+    if(SubRunCounter % timestampsperoutput == 0) {
       fname = OutputFolder + "/DCRunF" + RunNumber;
       char subrun[BUFSIZE];
-      sprintf(subrun, "%s%.5dOVDAQ", OVRunType.c_str(),
+      sprintf(subrun, "P%.5dOVDAQ",
               SubRunCounter/timestampsperoutput);
       fname.append(subrun);
       dataFile = open_file(fname);
@@ -1078,20 +931,11 @@ int main(int argc, char **argv)
     ExtraDataVector.assign(MinDataVector.begin(), MinDataVector.end());
     ExtraIndexVector.assign(MinIndexVector.begin(), MinIndexVector.end());
 
-    if(EBRunMode == kRecovery) {
+    ++SubRunCounter;
+    if((SubRunCounter % timestampsperoutput == 0) && dataFile) {
       if(close(dataFile) < 0) {
-        log_msg(LOG_ERR,
-          "Fatal Error: Could not close output data file in recovery mode!\n");
+        log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
         return 127;
-      }
-    }
-    else {
-      ++SubRunCounter;
-      if((SubRunCounter % timestampsperoutput == 0) && dataFile) {
-        if(close(dataFile) < 0) {
-          log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
-          return 127;
-        }
       }
     }
 
