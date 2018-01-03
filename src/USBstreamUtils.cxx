@@ -3,7 +3,6 @@
 #include <stdarg.h>
 #include <string.h>
 #include <syslog.h>
-#include <dirent.h>
 #include <errno.h>
 #include "USBstreamUtils.h"
 
@@ -83,37 +82,4 @@ void start_log()
   openlog("OV EBuilder", LOG_NDELAY, LOG_USER);
 
   log_msg(LOG_NOTICE, "OV Event Builder Started\n");
-}
-
-bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
-            const bool allowdots, const bool allow_bl_and_pc)
-{
-  DIR *dp;
-  struct dirent *dirp;
-
-  errno = 0;
-  if((dp = opendir(dir.c_str())) == NULL) return true;
-
-  while((dirp = readdir(dp)) != NULL){
-    const std::string myfname = std::string(dirp->d_name);
-
-    if(allowdots){
-      if(myfname.find(".") != std::string::npos && myfname.size() <= 2)
-        continue;
-    }
-    else{
-      if(myfname.find(".") != std::string::npos)
-        continue;
-    }
-
-    if(!allow_bl_and_pc && (myfname.find("baseline")  != std::string::npos ||
-                            myfname.find("processed") != std::string::npos) )
-      continue;
-
-    myfiles.push_back(myfname);
-  }
-
-  if(closedir(dp) < 0) return true;
-
-  return myfiles.size()==0;
 }

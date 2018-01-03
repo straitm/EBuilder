@@ -7,6 +7,8 @@
 #include <pthread.h>
 #include <errno.h>
 #include <syslog.h>
+#include <libgen.h>
+#include <dirent.h>
 #include <algorithm>
 #include <sys/statvfs.h>
 #include <sys/types.h>
@@ -39,7 +41,7 @@ struct usb_sbop{
 };
 
 struct some_run_info{
-  int daqdisk, ebsubrun;
+  int ebsubrun;
   bool has_ebsubrun, has_stoptime;
 };
 
@@ -59,15 +61,12 @@ static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
 
 // Mutated as program runs
 static int OV_EB_State = 0;
-static pthread_t gThreads[maxUSB]; // An array of threads to decode files
 static int initial_delay = 0;
-static vector<string> files; // vector to hold file names
 
 // Set in parse_options()
 static int Threshold = 73; //default 1.5 PE threshold
 static string RunNumber = "";
-static string OVDAQHost = "dcfovdaq";
-static string OutBaseDir = "."; // output directory
+static string OutBase; // output file
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
 // Set in read_summary_table() from database information and used throughout
@@ -78,8 +77,7 @@ static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                         // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB];
-static string BinaryDir; // Path to data
-static string OutputFolder; // Default output data path hard-coded
+static string InputDir; // Path to data
 static int SubRunCounter = 0;
 
 // *Size* set in read_summary_table()
@@ -96,10 +94,10 @@ static void *decode(void *ptr) // This defines a thread to decode files
 }
 
 // opens output data file
-static int open_file(const string name)
+static int open_file(const string & name)
 {
   errno = 0;
-  const int fd = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0666);
+  const int fd = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
   if(fd < 0){
     log_msg(LOG_CRIT, "Fatal Error: failed to open file %s: %s\n",
             name.c_str(), strerror(errno));
@@ -133,13 +131,11 @@ static int check_disk_space(string dir)
   return 0;
 }
 
-// FixME: To be optimized (Was never done for Double Chooz.  Is it inefficient?)
-static void check_status()
+static void check_status(const vector<string> & files)
 {
   static int Ddelay = 0;
   // Performance monitor
-  log_msg(LOG_INFO, "Found %u files.\n", (unsigned int)files.size());
-  int f_delay = (int)(latency*files.size()/numUSB/20);
+  const int f_delay = (int)(latency*files.size()/numUSB/20);
   if(f_delay != OV_EB_State) {
     if(f_delay > OV_EB_State) {
       if(OV_EB_State <= initial_delay) { // OV EBuilder was not already behind
@@ -171,16 +167,52 @@ static void check_status()
   }
 }
 
+// Fills myfiles with a list of files in the given directory.
+//
+// These files are the set that does not have a dot in their name.
+//
+// Also exclude files with names containing "baseline" or "processed" unless
+// 'allow_bl_and_pc' is true.
+//
+// Return true if no files are found that satisfy those rules, including if
+// the directory couldn't be read.  Otherwise, returns false.
+static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
+                   const bool allow_bl_and_pc = false)
+{
+  DIR *dp;
+  struct dirent *dirp;
+
+  errno = 0;
+  if((dp = opendir(dir.c_str())) == NULL) return true;
+
+  while((dirp = readdir(dp)) != NULL){
+    const std::string myfname = std::string(dirp->d_name);
+
+    if(myfname.find(".") != std::string::npos)
+      continue;
+
+    if(!allow_bl_and_pc && (myfname.find("baseline")  != std::string::npos ||
+                            myfname.find("processed") != std::string::npos) )
+      continue;
+
+    myfiles.push_back(myfname);
+  }
+
+  if(closedir(dp) < 0) return true;
+
+  return myfiles.size()==0;
+}
+
 // Loads files
 // Just check that it exists
 // (XXX which is it?)
 static bool LoadRun()
 {
-  files.clear();
-  if(GetDir(BinaryDir, files)) {
+  vector<string> files;
+  if(GetDir(InputDir, files)) {
     if(errno) {
       log_msg(LOG_CRIT, "Error (%s) opening directory %s\n", strerror(errno),
-              BinaryDir.c_str());
+              InputDir.c_str());
       exit(1);
     }
     return false;
@@ -188,20 +220,6 @@ static bool LoadRun()
   else {
     initial_delay = (int)(latency*files.size()/numUSB/20);
     OV_EB_State = initial_delay;
-  }
-
-  sort(files.begin(), files.end());
-
-  const string TempProcessedOutput = OutputFolder + "/processed";
-  umask(0);
-  if(mkdir(OutputFolder.c_str(), 0777)) {
-    log_msg(LOG_CRIT, "Error creating output file %s\n", OutputFolder.c_str());
-    exit(1);
-  }
-  else if(mkdir(TempProcessedOutput.c_str(), 0777)) {
-    log_msg(LOG_CRIT, "Error creating output file %s\n",
-      TempProcessedOutput.c_str());
-    exit(1);
   }
 
   return true;
@@ -212,84 +230,77 @@ static bool LoadRun()
 // (XXX Which is it?)
 static int LoadAll()
 {
-  const int r = check_disk_space(BinaryDir);
+  const int r = check_disk_space(InputDir);
   if(r < 0) {
-    log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n", BinaryDir.c_str());
+    log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n", InputDir.c_str());
     return r;
   }
 
   // FixME: Is 2*numUSB sufficient to guarantee a match?
-  if(files.size() <= 3*numUSB) {
-    files.clear();
-    if(GetDir(BinaryDir, files))
-      return 0;
-  }
+  vector<string> files;
+  if(GetDir(InputDir, files))
+    return 0;
 
   if(files.size() < numUSB)
     return 0;
 
-  sort(files.begin(), files.end()); // FixME: Is it safe to avoid this every time?
+  sort(files.begin(), files.end());
 
-  vector<string>::iterator fname_begin=files.begin();
+  const string fdelim = "_"; // Files must be of form xxxxxxxxx_xx
 
-  check_status(); // Performance monitor
-
-  string fdelim = "_"; // Assume files are of form xxxxxxxxx_xx
-  size_t fname_it_delim;
-  if(fname_begin->find(fdelim) == fname_begin->npos) {
-    log_msg(LOG_CRIT, "Fatal Error: Cannot find '_' in input file name\n");
-    return -1;
-  }
-
-  fname_it_delim = fname_begin->find(fdelim);
-  for(unsigned int k = 0; k<numUSB; k++) {
-    for(int j = k; j<(int)files.size(); j++) {
-      const string fusb = (files[j]).substr(fname_it_delim+1, (files[j]).npos);
-      if(strtol(fusb.c_str(), NULL, 10) == OVUSBStream[k].GetUSB()) {
-        const string temp3 = files[j];
-        files[j] = files[k];
-        files[k] = temp3;
-        break;
-      }
-      if(j==(int)(files.size()-1)) { // Failed to find a file for USB k
-        log_msg(LOG_WARNING, "USB %d data file not found\n",
-          OVUSBStream[k].GetUSB());
-        files.clear();
-        return 0;
-      }
+  // Ignore files without a delimiter
+  for(unsigned int j = 0; j < files.size(); j++){
+    if(files[j].find(fdelim) == string::npos){
+      files.erase(files.begin()+j);
+      j--;
     }
   }
 
-  fname_begin = files.begin();
+  check_status(files); // Performance monitor
+
+  int missing = 0;
+  for(unsigned int k = 0; k<numUSB; k++) {
+    for(unsigned int j = k; j < files.size(); j++) {
+      const size_t fname_it_delim = files[j].find(fdelim);
+
+      const string fusb = files[j].substr(fname_it_delim+1);
+      if(strtol(fusb.c_str(), NULL, 10) == OVUSBStream[k].GetUSB()) {
+        log_msg(LOG_INFO, "Data file from USB %d found\n", OVUSBStream[k].GetUSB());
+        std::swap(files[j], files[k]);
+        break;
+      }
+
+      if(j == files.size()-1){ // Failed to find a file for USB k
+        log_msg(LOG_INFO, "Data file from USB %d not found\n", OVUSBStream[k].GetUSB());
+        missing++;
+      }
+    }
+  }
+  if(missing > 0){
+    log_msg(LOG_WARNING, "Only %d of %d USB data files found\n",
+            numUSB-missing, numUSB);
+    return false;
+  }
+
+  vector<string>::iterator filesit = files.begin();
 
   int status = 0;
   string base_filename;
   for(unsigned int k=0; k<numUSB; k++) {
-    fname_it_delim = fname_begin->find(fdelim);
-    const string ftime_min = fname_begin->substr(0, fname_it_delim);
-    const string fusb = fname_begin->substr(fname_it_delim+1, fname_begin->npos);
-    // Error: All usbs should have been assigned by MySQL
-    if(OVUSBStream[k].GetUSB() == -1) {
-      log_msg(LOG_CRIT, "Fatal Error: USB number unassigned\n");
-      return -1;
-    }
-    else { // Check to see that USB numbers are aligned
-      if(OVUSBStream[k].GetUSB() != strtol(fusb.c_str(), NULL, 10)) {
-        log_msg(LOG_CRIT, "Fatal Error: USB number misalignment\n");
-        return -1;
-      }
-    }
+    const size_t fname_it_delim = filesit->find(fdelim);
+    const string ftime_min = filesit->substr(0, fname_it_delim);
+    const string fusb = filesit->substr(fname_it_delim+1);
+
     // Build input filename ( _$usb will be added by LoadFile function )
-    base_filename=BinaryDir;
+    base_filename=InputDir;
     base_filename.append("/");
     base_filename.append(ftime_min);
     if( (status = OVUSBStream[k].LoadFile(base_filename)) < 1 ) // Can't load file
       return status;
 
-    fname_begin++; // Increment file name iterator
+    filesit++;
   }
 
-  files.assign(fname_begin, files.end());
   return 1;
 }
 
@@ -406,14 +417,22 @@ static bool parse_options(int argc, char **argv)
     switch (c) {
     // XXX no overflow protection
     case 'r': strcpy(buf, optarg); RunNumber = buf; break;
-    case 'H': strcpy(buf, optarg); OVDAQHost = buf; break;
+    case 'H': strcpy(buf, optarg); InputDir = buf; break;
 
     case 't': Threshold = atoi(optarg); option_t_used = true; break;
     case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
-    case 'e': strcpy(buf, optarg); OutBaseDir = buf; break;
+    case 'e': strcpy(buf, optarg); OutBase = buf; break;
     case 'h':
     default:  goto fail;
     }
+  }
+  if(OutBase == ""){
+    printf("You must use the -e option\n");
+    goto fail;
+  }
+  if(InputDir == ""){
+    printf("You must use the -H option\n");
+    goto fail;
   }
   if(option_t_used && EBTrigMode == kNone){
     printf("Warning: threshold given with -t ignored with -T 0\n");
@@ -441,7 +460,7 @@ static bool parse_options(int argc, char **argv)
   fail:
   printf("Usage: %s -r <run_number> [-d <data_disk>]\n"
          "      [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
-         "      [-H <OV_DAQ_data_mount_point>] [-e <EBuilder_output_disk>]\n"
+         "      [-H <input data directory>] [-e <EBuilder_output_disk>]\n"
          "-r : expected run # for incoming data\n"
          "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
          "-t : offline threshold (ADC counts) to apply\n"
@@ -450,8 +469,8 @@ static bool parse_options(int argc, char **argv)
          "     0: No threshold\n"
          "     1: Per-channel threshold\n"
          "     2: [default] Overlapping pair with both channels over threshold\n"
-         "-H : OV DAQ mount path on EBuilder machine [default: ovfovdaq]\n"
-         "-e : Base output directory, default .\n",
+         "-H : Input data directory - mandatory argument\n"
+         "-e : Output file - mandatory argument\n",
          argv[0]);
   return false;
 }
@@ -508,10 +527,10 @@ static bool GetBaselines()
   // Check for a baseline file directory with the right right number of files.
   {
     vector<string> all_files;
-    if(GetDir(BinaryDir, all_files, false, true)) {
+    if(GetDir(InputDir, all_files, true)) {
       if(errno)
         log_msg(LOG_ERR, "Error (%s) opening binary "
-          "directory %s for baselines\n", strerror(errno), BinaryDir.c_str());
+          "directory %s for baselines\n", strerror(errno), InputDir.c_str());
       return false;
     }
 
@@ -523,7 +542,7 @@ static bool GetBaselines()
     if(baseline_files.size() != numUSB) {
       log_msg(LOG_ERR, "Error: Baseline file count (%lu) != "
         "numUSB (%u) in directory %s\n", (long int)baseline_files.size(), numUSB,
-         BinaryDir.c_str());
+         InputDir.c_str());
       return false;
     }
   }
@@ -537,7 +556,7 @@ static bool GetBaselines()
       log_msg(LOG_ERR, "Error: USB number unassigned while getting baselines\n");
       return false;
     }
-    if(OVUSBStream[Datamap[i]].LoadFile(BinaryDir+ "/baseline") < 1)
+    if(OVUSBStream[Datamap[i]].LoadFile(InputDir+ "/baseline") < 1)
       return false; // Load baseline file for data streams
   }
 
@@ -568,16 +587,6 @@ static void die_with_log(const char * const format, ...)
   exit(127);
 }
 
-// Like sprintf(), but returns a std::string instead of writing into a
-// character buffer.  Truncates the string at BUFSIZE.
-static string cpp_sprintf(const char * format, ...)
-{
-  va_list ap;
-  va_start(ap, format);
-  char buf[BUFSIZE];
-  vsnprintf(buf, BUFSIZE, format, ap);
-  return buf;
-}
 
 // Return a list of distict USB serial numbers for the given config table.
 // Sets no globals.
@@ -656,7 +665,6 @@ static some_run_info get_some_run_info()
   memset(&info, 0, sizeof(some_run_info));
   info.has_ebsubrun = false;
   info.has_stoptime = true;
-  info.daqdisk = 2;
   return info;
 }
 
@@ -705,15 +713,6 @@ static void read_summary_table()
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
   const some_run_info runinfo = get_some_run_info();
-
-  // Set the Data Folder and Ouput Dir
-  const string OutputDir = OutBaseDir + "/";
-  OutputFolder = OutputDir + "DATA/";
-
-  // Assign output folder based on disk number
-  const string datadir =
-    cpp_sprintf("/%s/data%d/%s", OVDAQHost.c_str(), runinfo.daqdisk, "OVDAQ/DATA");
-  BinaryDir = datadir + "/Run_" + RunNumber + "/binary/";
 }
 
 static bool run_has_ended()
@@ -725,15 +724,13 @@ static bool run_has_ended()
 
 static bool write_endofrun_block(string myfname, int data_fd)
 {
-  // XXX Why does this part of the code, in particular, have a retry loop
-  // for writing to the file?
   if(SubRunCounter % timestampsperoutput == 0) {
-    printf("Recovery or SubRunCounter%%timestampsperoutput == 0, "
+    printf("SubRunCounter%%timestampsperoutput == 0, "
            "whatever that means!\n");
     data_fd = open_file(myfname);
     if(data_fd <= 0) {
-      log_msg(LOG_ERR, "Cannot open file %s to write "
-        "end-of-run block for run %s\n", myfname.c_str(), RunNumber.c_str());
+      log_msg(LOG_ERR, "Cannot open file %s to write end-of-run block\n",
+              myfname.c_str());
       return false;
     }
   }
@@ -766,7 +763,6 @@ int main(int argc, char **argv)
   vector<int32_t> MinDataPacket; // Minimum and Last Data Packets added
   vector<int32_t> MinIndexVector; // Vector of USB index of Minimum Data Packet
   int dataFile = 0; // output file descriptor
-  string fname = "ebuilder.out"; // output file name
   int EventCounter = 0;
 
   start_log(); // establish syslog connection
@@ -793,9 +789,6 @@ int main(int argc, char **argv)
   // Set Thresholds. Only for data streams
   for(unsigned int i = 0; i < numUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
-
-  // Locate existing binary data and create output folder
-  OutputFolder = OutputFolder + "Run_" + RunNumber;
 
   {
     const time_t oldtime = time(0);
@@ -829,55 +822,60 @@ int main(int argc, char **argv)
           goto out; // XXX Escape here and we can get files built
           if((int)difftime(time(0), oldtime) > ENDTIME &&
              (run_has_ended() || (int)difftime(time(0), oldtime) > MAXTIME)) {
-            while(!write_endofrun_block(fname, dataFile)) sleep(1);
+            while(!write_endofrun_block(OutBase, dataFile)) sleep(1);
 
             if((int)difftime(time(0), oldtime) > MAXTIME)
               log_msg(LOG_ERR, "No data found for %d seconds!  "
-                  "Closing run %s without finding stop time on MySQL\n",
-                  MAXTIME, RunNumber.c_str());
+                  "Closing run without finding stop time on MySQL\n",
+                  MAXTIME);
             else
-              log_msg(LOG_INFO, "Event Builder has finished processing run %s\n",
-                RunNumber.c_str());
+              log_msg(LOG_INFO, "Event Builder has finished processing run\n");
 
             return 0;
           }
           sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
         }
 
+        pthread_t threads[maxUSB]; // An array of threads to decode files
+
         for(unsigned int j=0; j<numUSB; j++) // Load all files in at once
-          pthread_create(&gThreads[j], NULL, decode, (void*) j);
+          pthread_create(&threads[j], NULL, decode, (void*) j);
 
         for(unsigned int n = 0; n < numUSB; n++)
-          pthread_join(gThreads[n], NULL);
+          pthread_join(threads[n], NULL);
 
-        // Rename files
+        // move files into a subdirectory called decoded/ and rename then with
+        // ".done" at the end
         for(unsigned int j = 0; j<numUSB; j++) {
-          string tempfilename = OVUSBStream[j].GetFileName();
-          size_t mypos = tempfilename.find("binary");
-          if(mypos != tempfilename.npos)
-            tempfilename.replace(mypos, 6, "decoded");
-          tempfilename += ".done";
+          const string origname = OVUSBStream[j].GetFileName();
+          const string origname2 = OVUSBStream[j].GetFileName(); // basename insanity
+          const string donedir = dirname((char *)origname.c_str()) + string("/decoded/");
+          const string donename = donedir + string(basename((char *)OVUSBStream[j].GetFileName())) + ".done";
 
           errno = 0;
-          while(rename(OVUSBStream[j].GetFileName(), tempfilename.c_str())) {
-            log_msg(LOG_ERR, "Could not rename binary data file %s to %s: %s.\n",
-                    OVUSBStream[j].GetFileName(), tempfilename.c_str(),
-                    strerror(errno));
-            sleep(1);
+          if(mkdir(donedir.c_str(), 0755) == -1 && errno != EEXIST){
+            log_msg(LOG_CRIT, "Could not create directory %s: %s.\n",
+                    donedir.c_str(), strerror(errno));
+            exit(1);
+          }
+
+          errno = 0;
+          if(rename(origname2.c_str(), donename.c_str())) {
+            log_msg(LOG_CRIT, "Could not rename input file %s to %s: %s.\n",
+                    origname2.c_str(), donename.c_str(), strerror(errno));
+            exit(1);
           }
         }
       }
-      out: printf(".");
+      out: fputs("", stdout); // no-op to silence the compiler
     }
 
     // Open output data file
     if(SubRunCounter % timestampsperoutput == 0) {
-      fname = OutputFolder + "/DCRunF" + RunNumber;
       char subrun[BUFSIZE];
-      sprintf(subrun, "P%.5dOVDAQ",
-              SubRunCounter/timestampsperoutput);
-      fname.append(subrun);
-      dataFile = open_file(fname);
+      sprintf(subrun, "_%.5d", SubRunCounter/timestampsperoutput);
+      const string OutFile = OutBase + subrun;
+      dataFile = open_file(OutFile);
     }
 
     // index of minimum event added to USB stream

@@ -131,7 +131,6 @@ int USBstream::LoadFile(std::string nextfile)
         IsOpen = true;
         return 1;
       }
-      printf("Closing file\n");
       myFile->close();
       delete myFile;
       printf("USB %d has died. Exiting.\n",myusb);
