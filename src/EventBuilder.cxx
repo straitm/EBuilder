@@ -97,7 +97,7 @@ static void *decode(void *ptr) // This defines a thread to decode files
 static int open_file(const string & name)
 {
   errno = 0;
-  const int fd = open(name.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+  const int fd = open(name.c_str(), O_WRONLY | O_CREAT, 0644);
   if(fd < 0){
     log_msg(LOG_CRIT, "Fatal Error: failed to open file %s: %s\n",
             name.c_str(), strerror(errno));
@@ -106,7 +106,7 @@ static int open_file(const string & name)
   return fd;
 }
 
-static int check_disk_space(string dir)
+static int check_disk_space(const string & dir)
 {
   struct statvfs fiData;
   if((statvfs(dir.c_str(), &fiData)) < 0 ) {
@@ -203,10 +203,9 @@ static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
   return myfiles.size()==0;
 }
 
-// Loads files
-// Just check that it exists
-// (XXX which is it?)
-static bool LoadRun()
+// Checks that we can open the input directory and that there's at least
+// one file in there. Sets up performance statistics.
+static bool InitRun()
 {
   vector<string> files;
   if(GetDir(InputDir, files)) {
@@ -218,31 +217,24 @@ static bool LoadRun()
     return false;
   }
   else {
-    initial_delay = (int)(latency*files.size()/numUSB/20);
-    OV_EB_State = initial_delay;
+    OV_EB_State = initial_delay = (int)(latency*files.size()/numUSB/20);
   }
 
   return true;
 }
 
-// Loads files
-// Checks to see if files are ready to be processed
-// (XXX Which is it?)
-static int LoadAll()
+// If there is a file ready for each USB stream, open one for each.
+// Returns true if this happens, and false otherwise.
+static bool OpenNextFileSet()
 {
-  const int r = check_disk_space(InputDir);
-  if(r < 0) {
+  if(check_disk_space(InputDir) < 0) { // Why are we checking the *input* directory?
     log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n", InputDir.c_str());
-    return r;
+    return false;
   }
 
-  // FixME: Is 2*numUSB sufficient to guarantee a match?
   vector<string> files;
-  if(GetDir(InputDir, files))
-    return 0;
-
-  if(files.size() < numUSB)
-    return 0;
+  if(GetDir(InputDir, files)) return false;
+  if(files.size() < numUSB) return false;
 
   sort(files.begin(), files.end());
 
@@ -301,7 +293,7 @@ static int LoadAll()
     filesit++;
   }
 
-  return 1;
+  return true;
 }
 
 static void BuildEvent(const DataVector & in_packets,
@@ -722,29 +714,121 @@ static bool run_has_ended()
   return false;
 }
 
-static bool write_endofrun_block(string myfname, int data_fd)
+static bool write_end_block_and_close(const int data_fd)
 {
-  if(SubRunCounter % timestampsperoutput == 0) {
-    printf("SubRunCounter%%timestampsperoutput == 0, "
-           "whatever that means!\n");
-    data_fd = open_file(myfname);
-    if(data_fd <= 0) {
-      log_msg(LOG_ERR, "Cannot open file %s to write end-of-run block\n",
-              myfname.c_str());
-      return false;
-    }
-  }
-
-  uint32_t end = 0x53544F50; // "STOP"
-  uint32_t nend = htonl(end);
+  const uint32_t end = 0x53544F50; // "STOP"
+  const uint32_t nend = htonl(end);
   if(sizeof nend != write(data_fd, &nend, sizeof nend)){
     log_msg(LOG_ERR, "End of run write error\n");
     return false;
   }
 
-  if(close(data_fd) < 0) log_msg(LOG_ERR, "Could not close output data file\n");
+  if(close(data_fd) < 0){
+    log_msg(LOG_ERR, "Could not close output data file\n");
+    return false;
+  }
 
   return true;
+}
+
+// This is all the code that I found around BuildEvent. It does some things. I
+// have not really figured out what they are yet. Sorry sorry sorrysorrysorry.
+// In some fashion it does the building of the available data and leaves the
+// unbuilt data for the next try.  It returns the number of events built.
+static unsigned int SuperBuildEvents(DataVector * CurrentDataVector,
+                                     const int fd)
+{
+  // I don't know how many of these need to be static
+  static DataVector::iterator CurrentDataVectorIt[maxUSB];
+  static DataVector MinDataVector; // DataVector of current minimum data packets
+  static vector<int32_t> MinDataPacket; // Minimum and Last Data Packets added
+  static vector<int32_t> MinIndexVector; // Vector of USB index of Minimum Data Packet
+  static DataVector ExtraDataVector; // DataVector carries over events from last time stamp
+  static vector<int32_t> ExtraIndexVector;
+
+  unsigned int EventCounter = 0;
+  // index of minimum event added to USB stream
+  int MinIndex=0;
+  for(unsigned int i=0; i < numUSB; i++) {
+    // MinIndex is set to the last CurrentDataVector that's empty,
+    // or zero if none are empty.
+    CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
+    if(CurrentDataVector[i].empty()) MinIndex = i;
+  }
+  MinDataVector.assign(ExtraDataVector.begin(), ExtraDataVector.end());
+  MinIndexVector.assign(ExtraIndexVector.begin(), ExtraIndexVector.end());
+
+  // This is an elaborate test for whether all CurrentDataVectors are
+  // non-empty up to numUSB.
+  while( CurrentDataVectorIt[MinIndex]!=CurrentDataVector[MinIndex].end() ) {
+    // Until 1 USB stream finishes timestamp
+
+    MinIndex=0; // Reset minimum to first USB stream
+    MinDataPacket = *(CurrentDataVectorIt[MinIndex]);
+
+    for(unsigned int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
+
+      vector<int32_t> CurrentDataPacket = *(CurrentDataVectorIt[k]);
+
+      // Find real minimum; no clock slew
+      if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {
+        // If current packet less than min packet, min = current
+        MinDataPacket = CurrentDataPacket;
+        MinIndex = k;
+      }
+
+    } // End of for loop: MinDataPacket has been filled appropriately
+
+    if(MinDataVector.size() > 0) { // Check for equal events
+      if( LessThan(MinDataVector.back(), MinDataPacket, 3) ) {
+        // Ignore gaps which have consist of fewer than 4 clock cycles
+
+        ++EventCounter;
+        BuildEvent(MinDataVector, MinIndexVector, fd);
+
+        MinDataVector.clear();
+        MinIndexVector.clear();
+      }
+    }
+    MinDataVector.push_back(MinDataPacket); // Add new element
+    MinIndexVector.push_back(MinIndex);
+    CurrentDataVectorIt[MinIndex]++; // Increment iterator for added packet
+
+  } // End of while loop: Events have been built for this time stamp
+
+  // Clean up operations and store data for later
+  for(unsigned int k=0; k<numUSB; k++)
+    CurrentDataVector[k].assign(CurrentDataVectorIt[k], CurrentDataVector[k].end());
+  ExtraDataVector.assign(MinDataVector.begin(), MinDataVector.end());
+  ExtraIndexVector.assign(MinIndexVector.begin(), MinIndexVector.end());
+
+  return EventCounter;
+}
+
+// move files into a subdirectory called decoded/ and rename then with ".done"
+static void rename_files_we_have_read()
+{
+  for(unsigned int j = 0; j<numUSB; j++) {
+    const string origname = OVUSBStream[j].GetFileName();
+    const string origname2 = OVUSBStream[j].GetFileName(); // basename insanity
+    const string donedir = dirname((char *)origname.c_str()) + string("/decoded/");
+    const string donename = donedir +
+      string(basename((char *)OVUSBStream[j].GetFileName())) + ".done";
+
+    errno = 0;
+    if(mkdir(donedir.c_str(), 0755) == -1 && errno != EEXIST){
+      log_msg(LOG_CRIT, "Could not create directory %s: %s.\n",
+              donedir.c_str(), strerror(errno));
+      exit(1);
+    }
+
+    errno = 0;
+    if(rename(origname2.c_str(), donename.c_str())) {
+      log_msg(LOG_CRIT, "Could not rename input file %s to %s: %s.\n",
+              origname2.c_str(), donename.c_str(), strerror(errno));
+      exit(1);
+    }
+  }
 }
 
 int main(int argc, char **argv)
@@ -753,17 +837,9 @@ int main(int argc, char **argv)
     return 127;
   }
 
-  DataVector ExtraDataVector; // DataVector carries over events from last time stamp
-  vector<int32_t> ExtraIndexVector;
-
   // Array of DataVectors for current timestamp to process
   DataVector CurrentDataVector[maxUSB];
-  DataVector::iterator CurrentDataVectorIt[maxUSB];
-  DataVector MinDataVector; // DataVector of current minimum data packets
-  vector<int32_t> MinDataPacket; // Minimum and Last Data Packets added
-  vector<int32_t> MinIndexVector; // Vector of USB index of Minimum Data Packet
-  int dataFile = 0; // output file descriptor
-  int EventCounter = 0;
+  int fd = 0; // output file descriptor
 
   start_log(); // establish syslog connection
 
@@ -793,9 +869,9 @@ int main(int argc, char **argv)
   {
     const time_t oldtime = time(0);
 
-    while(!LoadRun()) {
+    while(!InitRun()) {
       if((int)difftime(time(0), oldtime) > MAXTIME) {
-        log_msg(LOG_CRIT, "Error: Binary data not found in the last %d seconds.\n",
+        log_msg(LOG_CRIT, "Error: No input files found in last %d seconds.\n",
           MAXTIME);
         return 127;
       }
@@ -806,23 +882,30 @@ int main(int argc, char **argv)
   // This is the main Event Builder loop
   while(true) {
 
+    // Open output data file
+    if(SubRunCounter % timestampsperoutput == 0) {
+      if(fd) write_end_block_and_close(fd);
+      char subrun[BUFSIZE];
+      sprintf(subrun, "_%.5d", SubRunCounter/timestampsperoutput);
+      const string OutFile = OutBase + subrun;
+      fd = open_file(OutFile);
+    }
+
     // XXX this is a loop over numUSB, but within it, all USB streams
     // are read on every iteration.  What's going on?
     for(unsigned int i=0; i < numUSB; i++) {
+      printf("Doing big loop for USB index %d\n", i);
 
+      // Until we have a new time stamp on USB i, keep trying to load up and
+      // decode a whole new set of files
       while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]))) {
         const time_t oldtime = time(0);
 
-        int status = 0;
-        while((status = LoadAll()) < 1){ // Try to find new files for each USB
-          if(status == -1) {
-            return 127;
-          }
+        while(!OpenNextFileSet()){ // Try to find new files for each USB
+
           log_msg(LOG_INFO, "Files are not ready...\n");
-          goto out; // XXX Escape here and we can get files built
           if((int)difftime(time(0), oldtime) > ENDTIME &&
              (run_has_ended() || (int)difftime(time(0), oldtime) > MAXTIME)) {
-            while(!write_endofrun_block(OutBase, dataFile)) sleep(1);
 
             if((int)difftime(time(0), oldtime) > MAXTIME)
               log_msg(LOG_ERR, "No data found for %d seconds!  "
@@ -831,111 +914,29 @@ int main(int argc, char **argv)
             else
               log_msg(LOG_INFO, "Event Builder has finished processing run\n");
 
-            return 0;
+            goto out; // XXX Escape here and we can get files built
           }
-          sleep(1); // FixMe: optimize? -- never done for Double Chooz -- needed?
+          sleep(1);
         }
 
         pthread_t threads[maxUSB]; // An array of threads to decode files
 
-        for(unsigned int j=0; j<numUSB; j++) // Load all files in at once
+        for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
           pthread_create(&threads[j], NULL, decode, (void*) j);
 
-        for(unsigned int n = 0; n < numUSB; n++)
-          pthread_join(threads[n], NULL);
+        for(unsigned int j = 0; j < numUSB; j++)
+          pthread_join(threads[j], NULL);
 
-        // move files into a subdirectory called decoded/ and rename then with
-        // ".done" at the end
-        for(unsigned int j = 0; j<numUSB; j++) {
-          const string origname = OVUSBStream[j].GetFileName();
-          const string origname2 = OVUSBStream[j].GetFileName(); // basename insanity
-          const string donedir = dirname((char *)origname.c_str()) + string("/decoded/");
-          const string donename = donedir + string(basename((char *)OVUSBStream[j].GetFileName())) + ".done";
-
-          errno = 0;
-          if(mkdir(donedir.c_str(), 0755) == -1 && errno != EEXIST){
-            log_msg(LOG_CRIT, "Could not create directory %s: %s.\n",
-                    donedir.c_str(), strerror(errno));
-            exit(1);
-          }
-
-          errno = 0;
-          if(rename(origname2.c_str(), donename.c_str())) {
-            log_msg(LOG_CRIT, "Could not rename input file %s to %s: %s.\n",
-                    origname2.c_str(), donename.c_str(), strerror(errno));
-            exit(1);
-          }
-        }
+        rename_files_we_have_read();
       }
-      out: fputs("", stdout); // no-op to silence the compiler
+      out: fputs("", stdout); // no-op
     }
 
-    // Open output data file
-    if(SubRunCounter % timestampsperoutput == 0) {
-      char subrun[BUFSIZE];
-      sprintf(subrun, "_%.5d", SubRunCounter/timestampsperoutput);
-      const string OutFile = OutBase + subrun;
-      dataFile = open_file(OutFile);
-    }
-
-    // index of minimum event added to USB stream
-    int MinIndex=0;
-    for(unsigned int i=0; i < numUSB; i++) {
-      // MinIndex is set to the last CurrentDataVector that's empty,
-      // or zero if none are empty.
-      CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
-      if(CurrentDataVector[i].empty()) MinIndex = i;
-    }
-    MinDataVector.assign(ExtraDataVector.begin(), ExtraDataVector.end());
-    MinIndexVector.assign(ExtraIndexVector.begin(), ExtraIndexVector.end());
-
-    // This is an elaborate test for whether all CurrentDataVectors are
-    // non-empty up to numUSB.
-    while( CurrentDataVectorIt[MinIndex]!=CurrentDataVector[MinIndex].end() ) {
-      // Until 1 USB stream finishes timestamp
-
-      MinIndex=0; // Reset minimum to first USB stream
-      MinDataPacket = *(CurrentDataVectorIt[MinIndex]);
-
-      for(unsigned int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
-
-        vector<int32_t> CurrentDataPacket = *(CurrentDataVectorIt[k]);
-
-        // Find real minimum; no clock slew
-        if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {
-          // If current packet less than min packet, min = current
-          MinDataPacket = CurrentDataPacket;
-          MinIndex = k;
-        }
-
-      } // End of for loop: MinDataPacket has been filled appropriately
-
-      if(MinDataVector.size() > 0) { // Check for equal events
-        if( LessThan(MinDataVector.back(), MinDataPacket, 3) ) {
-          // Ignore gaps which have consist of fewer than 4 clock cycles
-
-          ++EventCounter;
-          BuildEvent(MinDataVector, MinIndexVector, dataFile);
-
-          MinDataVector.clear();
-          MinIndexVector.clear();
-        }
-      }
-      MinDataVector.push_back(MinDataPacket); // Add new element
-      MinIndexVector.push_back(MinIndex);
-      CurrentDataVectorIt[MinIndex]++; // Increment iterator for added packet
-
-    } // End of while loop: Events have been built for this time stamp
-
-    // Clean up operations and store data for later
-    for(unsigned int k=0; k<numUSB; k++)
-      CurrentDataVector[k].assign(CurrentDataVectorIt[k], CurrentDataVector[k].end());
-    ExtraDataVector.assign(MinDataVector.begin(), MinDataVector.end());
-    ExtraIndexVector.assign(MinIndexVector.begin(), MinIndexVector.end());
+    const unsigned int EventCounter = SuperBuildEvents(CurrentDataVector, fd);
 
     ++SubRunCounter;
-    if((SubRunCounter % timestampsperoutput == 0) && dataFile) {
-      if(close(dataFile) < 0) {
+    if((SubRunCounter % timestampsperoutput == 0) && fd) {
+      if(close(fd) < 0) {
         log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
         return 127;
       }
@@ -943,7 +944,7 @@ int main(int argc, char **argv)
 
     log_msg(LOG_INFO, "Number of Merged Muon Events: %d\n", EventCounter);
     log_msg(LOG_INFO, "Processed Time Stamp: %d\n", OVUSBStream[0].GetTOLUTC());
-    EventCounter = 0;
+    write_end_block_and_close(fd);
     break; // XXX get out for testing
   }
 
