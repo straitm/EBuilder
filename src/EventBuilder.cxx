@@ -406,26 +406,22 @@ static bool parse_options(int argc, char **argv)
   if(argc <= 1) goto fail;
 
   char c;
-  while ((c = getopt (argc, argv, "t:T:H:e:h")) != -1) {
-    char buf[BUFSIZE];
-
+  while((c = getopt(argc, argv, "t:T:i:o:h")) != -1) {
     switch (c) {
-    // XXX no overflow protection
-    case 'H': strcpy(buf, optarg); InputDir = buf; break;
-
-    case 't': Threshold = atoi(optarg); option_t_used = true; break;
-    case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
-    case 'e': strcpy(buf, optarg); OutBase = buf; break;
-    case 'h':
-    default:  goto fail;
+      case 'i': InputDir = optarg; break;
+      case 'o': OutBase  = optarg; break;
+      case 't': Threshold = atoi(optarg); option_t_used = true; break;
+      case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
+      case 'h':
+      default:  goto fail;
     }
   }
   if(OutBase == ""){
-    printf("You must use the -e option\n");
+    printf("You must use the -o option\n");
     goto fail;
   }
   if(InputDir == ""){
-    printf("You must use the -H option\n");
+    printf("You must use the -i option\n");
     goto fail;
   }
   if(option_t_used && EBTrigMode == kNone){
@@ -452,19 +448,16 @@ static bool parse_options(int argc, char **argv)
   return true;
 
   fail:
-  printf("Usage: %s [-d <data_disk>]\n"
+  printf("Usage: %s -i <input data directory> -o <EBuilder_output_disk>\n"
          "      [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
-         "      [-H <input data directory>] [-e <EBuilder_output_disk>]\n"
-         "-r : expected run # for incoming data\n"
-         "     [default: Run_yyyymmdd_hh_mm (most recent)]\n"
+         "-i : Input data directory - mandatory argument\n"
+         "-o : Output file - mandatory argument\n"
          "-t : offline threshold (ADC counts) to apply\n"
          "     [default: 0 (no software threshold)]\n"
          "-T : offline trigger mode\n"
          "     0: No threshold\n"
          "     1: Per-channel threshold\n"
-         "     2: [default] Overlapping pair with both channels over threshold\n"
-         "-H : Input data directory - mandatory argument\n"
-         "-e : Output file - mandatory argument\n",
+         "     2: [default] Overlapping pair with both channels over threshold\n",
          argv[0]);
   return false;
 }
