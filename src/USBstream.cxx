@@ -358,32 +358,27 @@ void USBstream::check_data()
           else {
             MuonEvent = true;
           }
+
           if(packet.size() > 7) { // guarantees at least 1 hit (size > 9 for 2 hits)
             if(MuonEvent) { // Mu-like double found for this event
               if( myvec.size() > 0 ) {
                 DataVector::iterator InsertionSortIt = myvec.end();
                 bool found = false;
                 while(--InsertionSortIt >= myvec.begin()) {
-                  if(!LessThan(packet,*InsertionSortIt, 0)) {
-                    // Due to edge strip trigger logic in the trigger box firmware,
-                    // we find duplicate trigger box packets of the form:
-                    // p, 15366, 8086, 6128, 0, 1100 0000 0000 0000
-                    // p, 15366, 8086, 6131, 0, 1000 0000 0000 0000
-                    // These packets come from the same coincidence and one
-                    // packet is missing a hit because its partner was actually
-                    // also satisfied the mu-like double criteria.
-                    // We search for these duplicate trigger box packets and
-                    // make an OR of the hit data
-                    myvec.insert(InsertionSortIt+1,packet);
+                  if(!LessThan(packet, *InsertionSortIt, 0)) {
+                    myvec.insert(InsertionSortIt+1, packet);
                     found = true;
                     break;
                   }
                 }
 
                 // Reached beginning of myvec
-                if(!found) { myvec.insert(myvec.begin(),packet); }
+                if(!found)
+                  myvec.insert(myvec.begin(), packet);
               }
-              else { myvec.push_back(packet); }
+              else {
+                myvec.push_back(packet);
+              }
             }
           }
           //delete first few elements of data
