@@ -755,72 +755,69 @@ static bool write_end_block_and_close(const int data_fd)
 // have not really figured out what they are yet. Sorry sorry sorrysorrysorry.
 // In some fashion it does the building of the available data and leaves the
 // unbuilt data for the next try.  It returns the number of events built.
-static unsigned int SuperBuildEvents(DataVector * CurrentDataVector,
+static unsigned int SuperBuildEvents(DataVector * CurrentData,
                                      const int fd)
 {
   // I don't know how many of these need to be static
-  static DataVector::iterator CurrentDataVectorIt[maxUSB];
-  static DataVector MinDataVector; // DataVector of current minimum data packets
+  static DataVector::iterator CurrentDataIt[maxUSB];
+  static DataVector MinData; // Current minimum data packets
   static vector<int32_t> MinDataPacket; // Minimum and Last Data Packets added
-  static vector<int32_t> MinIndexVector; // Vector of USB index of Minimum Data Packet
-  static DataVector ExtraDataVector; // DataVector carries over events from last time stamp
-  static vector<int32_t> ExtraIndexVector;
+  static vector<int32_t> MinIndex; // USB indices of Minimum Data Packet
+  static DataVector ExtraData; // carries over events from last time stamp
+  static vector<int32_t> ExtraIndex;
 
   unsigned int EventCounter = 0;
   // index of minimum event added to USB stream
-  int MinIndex=0;
-  for(unsigned int i=0; i < numUSB; i++) {
-    // MinIndex is set to the last CurrentDataVector that's empty,
+  int imin = 0;
+  for(unsigned int i = 0; i < numUSB; i++) {
+    // MinIndex is set to the last CurrentData that's empty,
     // or zero if none are empty.
-    CurrentDataVectorIt[i]=CurrentDataVector[i].begin();
-    if(CurrentDataVector[i].empty()) MinIndex = i;
+    CurrentDataIt[i] = CurrentData[i].begin();
+    if(CurrentData[i].empty()) imin = i;
   }
-  MinDataVector.assign(ExtraDataVector.begin(), ExtraDataVector.end());
-  MinIndexVector.assign(ExtraIndexVector.begin(), ExtraIndexVector.end());
+  MinData .assign(ExtraData .begin(), ExtraData .end());
+  MinIndex.assign(ExtraIndex.begin(), ExtraIndex.end());
 
-  // This is an elaborate test for whether all CurrentDataVectors are
+  // This is an elaborate test for whether all CurrentDatas are
   // non-empty up to numUSB.
-  while( CurrentDataVectorIt[MinIndex]!=CurrentDataVector[MinIndex].end() ) {
+  while( CurrentDataIt[imin] != CurrentData[imin].end() ) {
     // Until 1 USB stream finishes timestamp
 
-    MinIndex=0; // Reset minimum to first USB stream
-    MinDataPacket = *(CurrentDataVectorIt[MinIndex]);
+    imin=0; // Reset minimum to first USB stream
+    MinDataPacket = *(CurrentDataIt[imin]);
 
-    for(unsigned int k=0; k<numUSB; k++) { // Loop over USB streams, find minimum
-
-      vector<int32_t> CurrentDataPacket = *(CurrentDataVectorIt[k]);
+    for(unsigned int k = 0; k < numUSB; k++) { // Loop over USB streams, find minimum
+      vector<int32_t> CurrentDataPacket = *(CurrentDataIt[k]);
 
       // Find real minimum; no clock slew
       if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {
         // If current packet less than min packet, min = current
         MinDataPacket = CurrentDataPacket;
-        MinIndex = k;
+        imin = k;
       }
-
     } // End of for loop: MinDataPacket has been filled appropriately
 
-    if(MinDataVector.size() > 0) { // Check for equal events
-      if( LessThan(MinDataVector.back(), MinDataPacket, 3) ) {
-        // Ignore gaps which have consist of fewer than 4 clock cycles
-
+    if(MinData.size() > 0) { // Check for equal events
+      if( LessThan(MinData.back(), MinDataPacket, 3) ) {
+        // Ignore gaps which consist of fewer than 4 clock cycles
         ++EventCounter;
-        BuildEvent(MinDataVector, MinIndexVector, fd);
+        BuildEvent(MinData, MinIndex, fd);
 
-        MinDataVector.clear();
-        MinIndexVector.clear();
+        MinData.clear();
+        MinIndex.clear();
       }
     }
-    MinDataVector.push_back(MinDataPacket); // Add new element
-    MinIndexVector.push_back(MinIndex);
-    CurrentDataVectorIt[MinIndex]++; // Increment iterator for added packet
+    MinData.push_back(MinDataPacket); // Add new element
+    MinIndex.push_back(imin);
+    CurrentDataIt[imin]++; // Increment iterator for added packet
 
   } // End of while loop: Events have been built for this time stamp
 
   // Clean up operations and store data for later
-  for(unsigned int k=0; k<numUSB; k++)
-    CurrentDataVector[k].assign(CurrentDataVectorIt[k], CurrentDataVector[k].end());
-  ExtraDataVector.assign(MinDataVector.begin(), MinDataVector.end());
-  ExtraIndexVector.assign(MinIndexVector.begin(), MinIndexVector.end());
+  for(unsigned int k = 0; k < numUSB; k++)
+    CurrentData[k].assign(CurrentDataIt[k], CurrentData[k].end());
+  ExtraData .assign(MinData .begin(), MinData .end());
+  ExtraIndex.assign(MinIndex.begin(), MinIndex.end());
 
   return EventCounter;
 }
@@ -875,8 +872,7 @@ int main(int argc, char **argv)
   LoadBaselineData();
   InitRun();
 
-  DataVector CurrentDataVector[maxUSB]; // for current timestamp to process
-  int fd = 0; // output file descriptor
+  DataVector CurrentData[maxUSB]; // for current timestamp to process
 
   while(true) {
     // XXX this is a loop over numUSB, but within it, all USB streams
@@ -884,7 +880,7 @@ int main(int argc, char **argv)
     for(unsigned int i=0; i < numUSB; i++) {
       // Until we have a new time stamp on USB i, keep trying to load up and
       // decode a whole new set of files
-      while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]))) {
+      while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]))) {
         const time_t oldtime = time(0);
 
         while(!OpenNextFileSet()){ // Try to find new files for each USB
@@ -924,7 +920,7 @@ int main(int argc, char **argv)
 
     // Advance all of these to the end.  Experimentally, it seems necessary.
     for(unsigned int i = 0; i < numUSB; i++)
-      OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]));
+      OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]));
 
     // We don't actually write out any data until we've failed to find
     // new files for a while or it's been declared that the run is over?
