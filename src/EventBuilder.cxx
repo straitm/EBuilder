@@ -44,11 +44,10 @@ struct some_run_info{
   bool has_ebsubrun, has_stoptime;
 };
 
-// Consts
 static const int maxUSB=10; // Maximum number of USB streams
 static const int latency=5; // Seconds before DAQ switches files.
                             // FixME: 5 anticipated for far detector
-static const int timestampsperoutput = 5; // XXX what?
+
 static const int numChannels=64; // Number of channels in M64
 static const int maxModules=64; // Maximum number of modules PER USB
                                 // (okay if less than total number of modules)
@@ -78,7 +77,7 @@ static map<int, int> Datamap; // XXX Maps numerical ordering of
                               // USBs to all numerical ordering of all USBs
 static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
-                                        // to pmtboard_u in MySQL table
+                                        // to pmtboard_u
 static USBstream OVUSBStream[maxUSB];
 
 // *Size* set in setup_from_config()
@@ -346,8 +345,7 @@ static void BuildEvent(const DataVector & in_packets,
     }
 
     const int module_local = (packet.at(0) >> 8) & 0x7f;
-    // EBuilder temporary internal mapping is decoded back to pmtbaord_u from
-    // MySQL table
+    // EBuilder temporary internal mapping is decoded back to pmtboard_u
     const int usb = OVUSBStream[OutIndex[packeti]].GetUSB();
     if(!PMTUniqueMap.count(usb*1000+module_local)){
       log_msg(LOG_ERR, "Got unknown module number %d on USB %d\n",
@@ -549,7 +547,6 @@ static bool GetBaselines()
 
   // Set USB numbers for each OVUSBStream and load baseline files
   for(unsigned int i = 0; i < numUSB; i++) {
-    // Error: all usbs should have been assigned from MySQL
     if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
       log_msg(LOG_ERR, "Error: USB number unassigned while getting baselines\n");
       return false;
@@ -881,33 +878,16 @@ int main(int argc, char **argv)
   DataVector CurrentDataVector[maxUSB]; // for current timestamp to process
   int fd = 0; // output file descriptor
 
-  int SubRunCounter = 0;
-
-  // This is the main Event Builder loop
   while(true) {
-
-    // Open output data file
-    if(SubRunCounter % timestampsperoutput == 0) {
-      if(fd) write_end_block_and_close(fd);
-      const unsigned int BUFSIZE = 1024;
-      char outfile[BUFSIZE];
-      snprintf(outfile, BUFSIZE, "%s_%05d",
-        OutBase.c_str(), SubRunCounter/timestampsperoutput);
-      fd = open_file(outfile);
-    }
-
     // XXX this is a loop over numUSB, but within it, all USB streams
     // are read on every iteration.  What's going on?
     for(unsigned int i=0; i < numUSB; i++) {
-      printf("Doing big loop for USB index %d\n", i);
-
       // Until we have a new time stamp on USB i, keep trying to load up and
       // decode a whole new set of files
       while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]))) {
         const time_t oldtime = time(0);
 
         while(!OpenNextFileSet()){ // Try to find new files for each USB
-
           if(((int)difftime(time(0), oldtime) > ENDTIME && run_has_ended)
            || (int)difftime(time(0), oldtime) > MAXTIME) {
 
@@ -922,6 +902,11 @@ int main(int argc, char **argv)
           }
           log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
           sleep(1);
+        }
+
+        {
+          static int nfilesets = 0;
+          printf("Decoding file set #%d for this run\n", ++nfilesets);
         }
 
         pthread_t threads[numUSB]; // An array of threads to decode files
@@ -948,15 +933,14 @@ int main(int argc, char **argv)
     // Not sure why we advance the subrun counter if and only if this
     // has happened, either.
 
-    const unsigned int EventCounter = SuperBuildEvents(CurrentDataVector, fd);
-    ++SubRunCounter;
+    const unsigned int BUFSIZE = 1024;
+    char outfile[BUFSIZE];
+    static int SubRunCounter = 0;
+    snprintf(outfile, BUFSIZE, "%s_%05d", OutBase.c_str(), SubRunCounter);
+    const int fd = open_file(outfile);
 
-    if((SubRunCounter % timestampsperoutput == 0) && fd) {
-      if(close(fd) < 0) {
-        log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
-        return 127;
-      }
-    }
+    const unsigned int EventCounter = SuperBuildEvents(CurrentData, fd);
+    ++SubRunCounter;
 
     log_msg(LOG_INFO, "Number of built events: %d\nProcessed time stamp: %d\n",
             EventCounter, OVUSBStream[0].GetTOLUTC());

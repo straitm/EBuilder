@@ -233,10 +233,7 @@ bool USBstream::decode()
                            // writes complete packets to disk at start/end of files
   //flush_extra();         // For now this is not true
 
-  if(myFile->is_open()) {
-    printf("Closing file\n");
-    myFile->close();
-  }
+  if(myFile->is_open()) myFile->close();
   delete myFile;
   IsOpen = false;
 
