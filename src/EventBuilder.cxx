@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <map>
 
 using std::vector;
@@ -53,9 +54,13 @@ static const int timestampsperoutput = 5; // XXX what?
 static const int numChannels=64; // Number of channels in M64
 static const int maxModules=64; // Maximum number of modules PER USB
                                 // (okay if less than total number of modules)
-static const int MAXTIME=5; // Seconds before timeout looking for baselines
-                             // and binary data.  Was 60.  Using 5 for testing.
-static const int ENDTIME=1; // Number of seconds before time out at end of run
+
+// Will stop if we haven't seen a new input file in ENDTIME seconds when
+// we know the run is over or MAXTIME seconds regardless. For Double
+// Chooz, MAXTIME was 60.
+static const int MAXTIME=5;
+static const int ENDTIME=1;
+
 static const int SYNC_PULSE_CLK_COUNT_PERIOD_LOG2=29; // trigger system emits
                                                       // sync pulse at 62.5MHz
 
@@ -707,11 +712,11 @@ static void read_summary_table()
   const some_run_info runinfo = get_some_run_info();
 }
 
-static bool run_has_ended()
+static bool run_has_ended = false;
+
+static void end_run_signal_handler(__attribute__((unused)) int sig)
 {
-  // Some test for whether the run has ended, perhaps the appearance
-  // of a file that says so in the directory we're reading.
-  return false;
+  run_has_ended = true;
 }
 
 static bool write_end_block_and_close(const int data_fd)
@@ -831,11 +836,28 @@ static void rename_files_we_have_read()
   }
 }
 
+static void setup_signals()
+{
+  // Lots of boilerplate that just says that when we get a
+  // SIGUSR1, call end_run_signal_handler().
+  struct sigaction usr1_action;
+  memset(&usr1_action, 0, sizeof(struct sigaction));
+  sigemptyset(&usr1_action.sa_mask);
+  usr1_action.sa_handler = end_run_signal_handler;
+
+  if(-1 == sigaction(SIGUSR1, &usr1_action, NULL)){
+    perror("sigaction()");
+    exit(1);
+  }
+}
+
 int main(int argc, char **argv)
 {
   if(!parse_options(argc, argv)) {
     return 127;
   }
+
+  setup_signals();
 
   // Array of DataVectors for current timestamp to process
   DataVector CurrentDataVector[maxUSB];
@@ -903,19 +925,18 @@ int main(int argc, char **argv)
 
         while(!OpenNextFileSet()){ // Try to find new files for each USB
 
-          log_msg(LOG_INFO, "Files are not ready...\n");
-          if((int)difftime(time(0), oldtime) > ENDTIME &&
-             (run_has_ended() || (int)difftime(time(0), oldtime) > MAXTIME)) {
+          if(((int)difftime(time(0), oldtime) > ENDTIME && run_has_ended)
+           || (int)difftime(time(0), oldtime) > MAXTIME) {
 
-            if((int)difftime(time(0), oldtime) > MAXTIME)
-              log_msg(LOG_ERR, "No data found for %d seconds!  "
-                  "Closing run without finding stop time on MySQL\n",
-                  MAXTIME);
-            else
+            if(run_has_ended)
               log_msg(LOG_INFO, "Event Builder has finished processing run\n");
+            else
+              log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
+                "the run was over! Closing run anyway.\n", MAXTIME);
 
-            goto out; // XXX Escape here and we can get files built
+            goto out; // break 3
           }
+          log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
           sleep(1);
         }
 
@@ -929,12 +950,23 @@ int main(int argc, char **argv)
 
         rename_files_we_have_read();
       }
-      out: fputs("", stdout); // no-op
     }
+    out:
+
+    // Advance all of these to the end.  Experimentally, it seems necessary.
+    for(unsigned int i = 0; i < numUSB; i++)
+      OVUSBStream[i].GetNextTimeStamp(&(CurrentDataVector[i]));
+
+    // We don't actually write out any data until we've failed to find
+    // new files for a while or it's been declared that the run is over?
+    // That seems like it might be problematic.
+    //
+    // Not sure why we advance the subrun counter if and only if this
+    // has happened, either.
 
     const unsigned int EventCounter = SuperBuildEvents(CurrentDataVector, fd);
-
     ++SubRunCounter;
+
     if((SubRunCounter % timestampsperoutput == 0) && fd) {
       if(close(fd) < 0) {
         log_msg(LOG_CRIT, "Fatal Error: Could not close output data file!\n");
