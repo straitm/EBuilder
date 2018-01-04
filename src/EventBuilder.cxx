@@ -923,6 +923,7 @@ int main(int argc, char **argv)
               log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
                 "the run was over! Closing run anyway.\n", MAXTIME);
 
+            run_has_ended = false; // reset for next run
             goto out; // break 3
           }
           log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
