@@ -82,7 +82,6 @@ static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                         // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB];
 static string InputDir; // Path to data
-static int SubRunCounter = 0;
 
 // *Size* set in read_summary_table()
 static bool *overflow; // Keeps track of sync overflows for all boards
@@ -898,6 +897,8 @@ int main(int argc, char **argv)
       else sleep(1);
     }
   }
+
+  int SubRunCounter = 0;
 
   // This is the main Event Builder loop
   while(true) {
