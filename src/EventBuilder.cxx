@@ -70,7 +70,6 @@ static int initial_delay = 0;
 
 // Set in parse_options()
 static int Threshold = 73; //default 1.5 PE threshold
-static string RunNumber = "";
 static string OutBase; // output file
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 
@@ -408,12 +407,11 @@ static bool parse_options(int argc, char **argv)
   if(argc <= 1) goto fail;
 
   char c;
-  while ((c = getopt (argc, argv, "r:t:T:H:e:h")) != -1) {
+  while ((c = getopt (argc, argv, "t:T:H:e:h")) != -1) {
     char buf[BUFSIZE];
 
     switch (c) {
     // XXX no overflow protection
-    case 'r': strcpy(buf, optarg); RunNumber = buf; break;
     case 'H': strcpy(buf, optarg); InputDir = buf; break;
 
     case 't': Threshold = atoi(optarg); option_t_used = true; break;
@@ -455,7 +453,7 @@ static bool parse_options(int argc, char **argv)
   return true;
 
   fail:
-  printf("Usage: %s -r <run_number> [-d <data_disk>]\n"
+  printf("Usage: %s [-d <data_disk>]\n"
          "      [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
          "      [-H <input data directory>] [-e <EBuilder_output_disk>]\n"
          "-r : expected run # for incoming data\n"
