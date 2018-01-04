@@ -72,7 +72,7 @@ static string OutBase; // output file
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 static string InputDir; // input data directory
 
-// Set in read_summary_table() from database information and used throughout
+// Set in setup_from_config() from database information and used throughout
 static unsigned int numUSB = 0;
 static map<int, int> Datamap; // XXX Maps numerical ordering of
                               // USBs to all numerical ordering of all USBs
@@ -81,7 +81,7 @@ static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                         // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB];
 
-// *Size* set in read_summary_table()
+// *Size* set in setup_from_config()
 static bool *overflow; // Keeps track of sync overflows for all boards
 static long int *maxcount_16ns_lo; // Keeps track of max clock count
 static long int *maxcount_16ns_hi; // for sync overflows for all boards
@@ -576,6 +576,20 @@ static bool GetBaselines()
   return true;
 }
 
+// Try to read in the baselines for MAXTIME seconds.  If they don't appear,
+// exit with status 127.
+static void LoadBaselineData()
+{
+  const time_t oldtime = time(0);
+  while(!GetBaselines()){
+    if((int)difftime(time(0), oldtime) > MAXTIME) {
+      log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
+        MAXTIME);
+      exit(127);
+    }
+    sleep(2);
+  }
+}
 
 static void die_with_log(const char * const format, ...)
 {
@@ -666,7 +680,7 @@ static some_run_info get_some_run_info()
   return info;
 }
 
-static void read_summary_table()
+static void setup_from_config()
 {
   const vector<int> usbserials = get_distinct_usb_serials();
   numUSB = usbserials.size();
@@ -711,6 +725,9 @@ static void read_summary_table()
   //////////////////////////////////////////////////////////////////////
   // Get run summary information
   const some_run_info runinfo = get_some_run_info();
+
+  for(unsigned int i = 0; i < numUSB; i++)
+    OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
 }
 
 static bool run_has_ended = false;
@@ -857,35 +874,12 @@ int main(int argc, char **argv)
   parse_options(argc, argv);
   setup_signals(); // so we will know when each run has ended
   start_log(); // establish syslog connection
-
-  // Array of DataVectors for current timestamp to process
-  DataVector CurrentDataVector[maxUSB];
-  int fd = 0; // output file descriptor
-
-
-  // Load OV run_summary table
-  // This should handle reprocessing eventually <-- relevant for CRT?
-  read_summary_table();
-
-  // Load baseline data
-  {
-    const time_t oldtime = time(0);
-    while(!GetBaselines()) { // Get baselines
-      if((int)difftime(time(0), oldtime) > MAXTIME) {
-        log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
-          MAXTIME);
-        return 127;
-      }
-      else{
-        sleep(2);
-      }
-    }
-  }
-
-  for(unsigned int i = 0; i < numUSB; i++)
-    OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
-
+  setup_from_config();
+  LoadBaselineData();
   InitRun();
+
+  DataVector CurrentDataVector[maxUSB]; // for current timestamp to process
+  int fd = 0; // output file descriptor
 
   int SubRunCounter = 0;
 
@@ -964,8 +958,8 @@ int main(int argc, char **argv)
       }
     }
 
-    log_msg(LOG_INFO, "Number of Merged Muon Events: %d\n", EventCounter);
-    log_msg(LOG_INFO, "Processed Time Stamp: %d\n", OVUSBStream[0].GetTOLUTC());
+    log_msg(LOG_INFO, "Number of built events: %d\nProcessed time stamp: %d\n",
+            EventCounter, OVUSBStream[0].GetTOLUTC());
     write_end_block_and_close(fd);
     break; // XXX get out for testing
   }
