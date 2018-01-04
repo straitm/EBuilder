@@ -22,8 +22,6 @@ using std::vector;
 using std::string;
 using std::map;
 
-#define BUFSIZE 1024
-
 enum TriggerMode {kNone, kSingleLayer, kDoubleLayer};
 enum packet_type { kOVR_DISCRIM = 0, kOVR_ADC = 1, kOVR_TRIGBOX = 2};
 
@@ -97,13 +95,13 @@ static void *decode(void *ptr) // This defines a thread to decode files
 }
 
 // opens output data file
-static int open_file(const string & name)
+static int open_file(const char * const name)
 {
   errno = 0;
-  const int fd = open(name.c_str(), O_WRONLY | O_CREAT, 0644);
+  const int fd = open(name, O_WRONLY | O_CREAT, 0644);
   if(fd < 0){
     log_msg(LOG_CRIT, "Fatal Error: failed to open file %s: %s\n",
-            name.c_str(), strerror(errno));
+            name, strerror(errno));
     exit(1);
   }
   return fd;
@@ -899,10 +897,11 @@ int main(int argc, char **argv)
     // Open output data file
     if(SubRunCounter % timestampsperoutput == 0) {
       if(fd) write_end_block_and_close(fd);
-      char subrun[BUFSIZE];
-      sprintf(subrun, "_%.5d", SubRunCounter/timestampsperoutput);
-      const string OutFile = OutBase + subrun;
-      fd = open_file(OutFile);
+      const unsigned int BUFSIZE = 1024;
+      char outfile[BUFSIZE];
+      snprintf(outfile, BUFSIZE, "%s_%05d",
+        OutBase.c_str(), SubRunCounter/timestampsperoutput);
+      fd = open_file(outfile);
     }
 
     // XXX this is a loop over numUSB, but within it, all USB streams
