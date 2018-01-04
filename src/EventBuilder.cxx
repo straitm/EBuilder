@@ -939,7 +939,7 @@ int main(int argc, char **argv)
           sleep(1);
         }
 
-        pthread_t threads[maxUSB]; // An array of threads to decode files
+        pthread_t threads[numUSB]; // An array of threads to decode files
 
         for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
           pthread_create(&threads[j], NULL, decode, (void*) j);
