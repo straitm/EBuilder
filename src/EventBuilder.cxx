@@ -70,6 +70,7 @@ static int initial_delay = 0;
 static int Threshold = 73; //default 1.5 PE threshold
 static string OutBase; // output file
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
+static string InputDir; // input data directory
 
 // Set in read_summary_table() from database information and used throughout
 static unsigned int numUSB = 0;
@@ -79,7 +80,6 @@ static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                         // to pmtboard_u in MySQL table
 static USBstream OVUSBStream[maxUSB];
-static string InputDir; // Path to data
 
 // *Size* set in read_summary_table()
 static bool *overflow; // Keeps track of sync overflows for all boards
@@ -204,9 +204,7 @@ static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
   return myfiles.size()==0;
 }
 
-// Checks that we can open the input directory and that there's at least
-// one file in there. Sets up performance statistics.
-static bool InitRun()
+static bool TryInitRun()
 {
   vector<string> files;
   if(GetDir(InputDir, files)) {
@@ -217,11 +215,26 @@ static bool InitRun()
     }
     return false;
   }
-  else {
-    OV_EB_State = initial_delay = (int)(latency*files.size()/numUSB/20);
-  }
+
+  OV_EB_State = initial_delay = (int)(latency*files.size()/numUSB/20);
 
   return true;
+}
+
+// Checks that we can open the input directory and that there's at least
+// one file in there. Sets up performance statistics.
+static void InitRun()
+{
+  const time_t oldtime = time(0);
+
+  while(!TryInitRun()) {
+    if((int)difftime(time(0), oldtime) > MAXTIME) {
+      log_msg(LOG_CRIT, "Error: No input files found in last %d seconds.\n",
+        MAXTIME);
+      exit(127);
+    }
+    else sleep(1);
+  }
 }
 
 // If there is a file ready for each USB stream, open one for each.
@@ -398,7 +411,7 @@ static void BuildEvent(const DataVector & in_packets,
   }
 }
 
-static bool parse_options(int argc, char **argv)
+static void parse_options(int argc, char **argv)
 {
   bool option_t_used = false;
   if(argc <= 1) goto fail;
@@ -443,7 +456,7 @@ static bool parse_options(int argc, char **argv)
     goto fail;
   }
 
-  return true;
+  return;
 
   fail:
   printf("Usage: %s -i <input data directory> -o <EBuilder_output_disk>\n"
@@ -457,7 +470,7 @@ static bool parse_options(int argc, char **argv)
          "     1: Per-channel threshold\n"
          "     2: [default] Overlapping pair with both channels over threshold\n",
          argv[0]);
-  return false;
+  exit(127);
 }
 
 static void CalculatePedestal(int baseptr[maxModules][numChannels],
@@ -841,17 +854,14 @@ static void setup_signals()
 
 int main(int argc, char **argv)
 {
-  if(!parse_options(argc, argv)) {
-    return 127;
-  }
-
-  setup_signals();
+  parse_options(argc, argv);
+  setup_signals(); // so we will know when each run has ended
+  start_log(); // establish syslog connection
 
   // Array of DataVectors for current timestamp to process
   DataVector CurrentDataVector[maxUSB];
   int fd = 0; // output file descriptor
 
-  start_log(); // establish syslog connection
 
   // Load OV run_summary table
   // This should handle reprocessing eventually <-- relevant for CRT?
@@ -872,22 +882,10 @@ int main(int argc, char **argv)
     }
   }
 
-  // Set Thresholds. Only for data streams
   for(unsigned int i = 0; i < numUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
 
-  {
-    const time_t oldtime = time(0);
-
-    while(!InitRun()) {
-      if((int)difftime(time(0), oldtime) > MAXTIME) {
-        log_msg(LOG_CRIT, "Error: No input files found in last %d seconds.\n",
-          MAXTIME);
-        return 127;
-      }
-      else sleep(1);
-    }
-  }
+  InitRun();
 
   int SubRunCounter = 0;
 
