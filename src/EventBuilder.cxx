@@ -35,6 +35,9 @@ struct usb_sbop{
     serial = serial_;
     board = board_;
     pmtboard_u = pmtboard_u_;
+
+    // TODO: these offsets need to be applied to ADC hits, even though this was
+    // not done for Double Chooz.
     offset = offset_;
   }
 };
@@ -66,7 +69,7 @@ static string OutBase; // output file
 static TriggerMode EBTrigMode = kDoubleLayer; // double-layer threshold
 static string InputDir; // input data directory
 
-// Set in setup_from_config() from database information and used throughout
+// Set in setup_from_config() and used throughout
 static unsigned int numUSB = 0;
 static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
@@ -402,21 +405,27 @@ static void BuildEvent(const DataVector & in_packets,
   }
 }
 
-static void parse_options(int argc, char **argv)
+static string parse_options(int argc, char **argv)
 {
   bool option_t_used = false;
+  string configfile;
   if(argc <= 1) goto fail;
 
   char c;
-  while((c = getopt(argc, argv, "t:T:i:o:h")) != -1) {
+  while((c = getopt(argc, argv, "c:t:T:i:o:h")) != -1) {
     switch (c) {
       case 'i': InputDir = optarg; break;
       case 'o': OutBase  = optarg; break;
       case 't': Threshold = atoi(optarg); option_t_used = true; break;
       case 'T': EBTrigMode = (TriggerMode)atoi(optarg); break;
+      case 'c': configfile = optarg; break;
       case 'h':
       default:  goto fail;
     }
+  }
+  if(configfile == ""){
+    printf("You must use the -c option\n");
+    goto fail;
   }
   if(OutBase == ""){
     printf("You must use the -o option\n");
@@ -447,13 +456,15 @@ static void parse_options(int argc, char **argv)
     goto fail;
   }
 
-  return;
+  return configfile;
 
   fail:
   printf("Usage: %s -i <input data directory> -o <EBuilder_output_disk>\n"
-         "      [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
+         "          -c <config file>\n"
+         "         [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
          "-i : Input data directory - mandatory argument\n"
          "-o : Output file - mandatory argument\n"
+         "-c : Configuration file giving USB and PMT information\n"
          "-t : offline threshold (ADC counts) to apply\n"
          "     [default: 0 (no software threshold)]\n"
          "-T : offline trigger mode\n"
@@ -592,50 +603,24 @@ static void die_with_log(const char * const format, ...)
 
 // Return a vector of {USB serial numbers, board numbers, pmtboard_u, time offsets}
 // for all USBs in the given table.  Sets no globals.
-static vector<usb_sbop> get_sbops()
+static vector<usb_sbop> get_sbops(const char * configfilename)
 {
   vector<usb_sbop> sbops;
-  // from sample data. TODO: Read from a config file.
-  sbops.push_back(usb_sbop(21,36,200,0));
-  sbops.push_back(usb_sbop(21,37,201,0));
-  sbops.push_back(usb_sbop(21,38,202,0));
-  sbops.push_back(usb_sbop(21,39,203,0));
-  sbops.push_back(usb_sbop(21,40,204,0));
-  sbops.push_back(usb_sbop(21,41,205,0));
-  sbops.push_back(usb_sbop(21,42,206,0));
-  sbops.push_back(usb_sbop(21,43,207,0));
-  sbops.push_back(usb_sbop(24,18,208,0));
-  sbops.push_back(usb_sbop(24,19,209,0));
-  sbops.push_back(usb_sbop(24,20,210,0));
-  sbops.push_back(usb_sbop(24,21,211,0));
-  sbops.push_back(usb_sbop(24,22,212,0));
-  sbops.push_back(usb_sbop(24,23,213,0));
-  sbops.push_back(usb_sbop(24,24,214,0));
-  sbops.push_back(usb_sbop(24,25,215,0));
-  sbops.push_back(usb_sbop(24,26,216,0));
-  sbops.push_back(usb_sbop(24,27,217,0));
-  sbops.push_back(usb_sbop(25,32,218,0));
-  sbops.push_back(usb_sbop(25,33,219,0));
-  sbops.push_back(usb_sbop(25,34,220,0));
-  sbops.push_back(usb_sbop(25,35,221,0));
-  sbops.push_back(usb_sbop(29,0,222,0));
-  sbops.push_back(usb_sbop(29,1,223,0));
-  sbops.push_back(usb_sbop(29,2,224,0));
-  sbops.push_back(usb_sbop(29,3,225,0));
-  sbops.push_back(usb_sbop(29,4,226,0));
-  sbops.push_back(usb_sbop(29,5,227,0));
-  sbops.push_back(usb_sbop(29,6,228,0));
-  sbops.push_back(usb_sbop(29,7,229,0));
-  sbops.push_back(usb_sbop(29,8,230,0));
-  sbops.push_back(usb_sbop(29,9,231,0));
-  sbops.push_back(usb_sbop(6,10,232,0));
-  sbops.push_back(usb_sbop(6,11,233,0));
-  sbops.push_back(usb_sbop(6,12,234,0));
-  sbops.push_back(usb_sbop(6,13,235,0));
-  sbops.push_back(usb_sbop(6,14,236,0));
-  sbops.push_back(usb_sbop(6,15,237,0));
-  sbops.push_back(usb_sbop(6,16,238,0));
-  sbops.push_back(usb_sbop(6,17,239,0));
+  FILE * configfile = fopen(configfilename, "r");
+  if(configfile == NULL) die_with_log("Could not read config file\n");
+
+  char * line = NULL;
+  size_t len = 0;
+  while(getline(&line, &len, configfile) != -1){
+    if(len < 2 || line[0] == '#') continue;
+    int serial, board, pmtboard, offset;
+    if(4 != sscanf(line, "%d %d %d %d", &serial, &board, &pmtboard, &offset))
+      die_with_log("Invalid line in config file: %s\n", line);
+    sbops.push_back(usb_sbop(serial, board, pmtboard, offset));
+  }
+  fclose(configfile);
+
+  if(line) free(line);
   return sbops;
 }
 
@@ -660,9 +645,9 @@ static int sbop_max_board(const vector<usb_sbop> & sbops)
   return maxb;
 }
 
-static void setup_from_config()
+static void setup_from_config(const string & configfile)
 {
-  const vector<usb_sbop> sbops = get_sbops();
+  const vector<usb_sbop> sbops = get_sbops(configfile.c_str());
 
   const vector<int> usbserials = get_distinct_usb_serials(sbops);
   numUSB = usbserials.size();
@@ -832,10 +817,10 @@ static void setup_signals()
 
 int main(int argc, char **argv)
 {
-  parse_options(argc, argv);
+  const string configfile = parse_options(argc, argv);
   setup_signals(); // so we will know when each run has ended
   start_log(); // establish syslog connection
-  setup_from_config();
+  setup_from_config(configfile);
   LoadBaselineData();
   InitRun();
 
