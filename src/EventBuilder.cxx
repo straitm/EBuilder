@@ -874,36 +874,41 @@ int main(int argc, char **argv)
 
   DataVector CurrentData[maxUSB]; // for current timestamp to process
 
-  while(true) {
+  for(unsigned int subrun = 0; /* forever */; subrun++){
+    // Read up to this many sets of files from the DAQ before opening a
+    // new output file.
+
+    // XXX placeholder until I understand the DAQ better
+    const int max_filesets_subrun = 2;
+
+    int nfilesets = 0;
+
     // XXX this is a loop over numUSB, but within it, all USB streams
     // are read on every iteration.  What's going on?
-    for(unsigned int i=0; i < numUSB; i++) {
+    for(unsigned int i = 0; i < numUSB && nfilesets < max_filesets_subrun; i++){
       // Until we have a new time stamp on USB i, keep trying to load up and
       // decode a whole new set of files
       while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]))) {
         const time_t oldtime = time(0);
 
         while(!OpenNextFileSet()){ // Try to find new files for each USB
-          if(((int)difftime(time(0), oldtime) > ENDTIME && run_has_ended)
-           || (int)difftime(time(0), oldtime) > MAXTIME) {
+          if((difftime(time(0), oldtime) > ENDTIME && run_has_ended)
+           || difftime(time(0), oldtime) > MAXTIME) {
 
             if(run_has_ended)
-              log_msg(LOG_INFO, "Event Builder has finished processing run\n");
+              log_msg(LOG_INFO, "Finished processing run\n");
             else
               log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
-                "the run was over! Closing run anyway.\n", MAXTIME);
+                "the run was over! Closing output file anyway.\n", MAXTIME);
 
-            run_has_ended = false; // reset for next run
             goto out; // break 3
           }
           log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
           sleep(1);
         }
+        nfilesets++;
 
-        {
-          static int nfilesets = 0;
-          printf("Decoding file set #%d for this run\n", ++nfilesets);
-        }
+        printf("Decoding file set #%d for this run\n", nfilesets);
 
         pthread_t threads[numUSB]; // An array of threads to decode files
 
@@ -931,17 +936,15 @@ int main(int argc, char **argv)
 
     const unsigned int BUFSIZE = 1024;
     char outfile[BUFSIZE];
-    static int SubRunCounter = 0;
-    snprintf(outfile, BUFSIZE, "%s_%05d", OutBase.c_str(), SubRunCounter);
+    snprintf(outfile, BUFSIZE, "%s_%05u", OutBase.c_str(), subrun);
     const int fd = open_file(outfile);
 
     const unsigned int EventCounter = SuperBuildEvents(CurrentData, fd);
-    ++SubRunCounter;
 
     log_msg(LOG_INFO, "Number of built events: %d\nProcessed time stamp: %d\n",
             EventCounter, OVUSBStream[0].GetTOLUTC());
     write_end_block_and_close(fd);
-    break; // XXX get out for testing
+    if(run_has_ended) break;
   }
 
   log_msg(LOG_WARNING, "Normally this program should not terminate like this...\n");
