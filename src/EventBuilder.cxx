@@ -39,11 +39,6 @@ struct usb_sbop{
   }
 };
 
-struct some_run_info{
-  int ebsubrun;
-  bool has_ebsubrun, has_stoptime;
-};
-
 static const int maxUSB=10; // Maximum number of USB streams
 static const int latency=5; // Seconds before DAQ switches files.
                             // FixME: 5 anticipated for far detector
@@ -666,17 +661,6 @@ static std::pair<int, int> board_count()
   return std::pair<int, int>(40, 240); // TODO: read from config file
 }
 
-// Gets the necessary run info from the run summary table, does some checking,
-// and returns the values that will be used to set globals.  No globals set here.
-static some_run_info get_some_run_info()
-{
-  some_run_info info;
-  memset(&info, 0, sizeof(some_run_info));
-  info.has_ebsubrun = false;
-  info.has_stoptime = true;
-  return info;
-}
-
 static void setup_from_config()
 {
   const vector<int> usbserials = get_distinct_usb_serials();
@@ -718,10 +702,6 @@ static void setup_from_config()
   // This is a temporary internal mapping used only by the EBuilder
   for(unsigned int i = 0; i < sbops.size(); i++)
     PMTUniqueMap[1000*sbops[i].serial+sbops[i].board] = sbops[i].pmtboard_u;
-
-  //////////////////////////////////////////////////////////////////////
-  // Get run summary information
-  const some_run_info runinfo = get_some_run_info();
 
   for(unsigned int i = 0; i < numUSB; i++)
     OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
