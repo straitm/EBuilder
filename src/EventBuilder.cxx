@@ -68,8 +68,6 @@ static string InputDir; // input data directory
 
 // Set in setup_from_config() from database information and used throughout
 static unsigned int numUSB = 0;
-static map<int, int> Datamap; // XXX Maps numerical ordering of
-                              // USBs to all numerical ordering of all USBs
 static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                         // to pmtboard_u
@@ -542,27 +540,27 @@ static bool GetBaselines()
 
   // Set USB numbers for each OVUSBStream and load baseline files
   for(unsigned int i = 0; i < numUSB; i++) {
-    if( OVUSBStream[Datamap[i]].GetUSB() == -1 ) {
+    if( OVUSBStream[i].GetUSB() == -1 ) {
       log_msg(LOG_ERR, "Error: USB number unassigned while getting baselines\n");
       return false;
     }
-    if(OVUSBStream[Datamap[i]].LoadFile(InputDir+ "/baseline") < 1)
+    if(OVUSBStream[i].LoadFile(InputDir+ "/baseline") < 1)
       return false; // Load baseline file for data streams
   }
 
   // Decode all files and load into memory
   for(unsigned int j = 0; j < numUSB; j++){
-    log_msg(LOG_INFO, "Decoding baseline %d\n", Datamap[j]),
-    decode((void*) Datamap[j]);
+    log_msg(LOG_INFO, "Decoding baseline %d\n", j),
+    decode((void*) j);
   }
 
   int baselines[maxModules][numChannels] = { { } };
 
   for(unsigned int i = 0; i < numUSB; i++) {
     DataVector BaselineData;
-    OVUSBStream[Datamap[i]].GetBaselineData(&BaselineData);
+    OVUSBStream[i].GetBaselineData(&BaselineData);
     CalculatePedestal(baselines, BaselineData);
-    OVUSBStream[Datamap[i]].SetBaseline(baselines);
+    OVUSBStream[i].SetBaseline(baselines);
   }
 
   return true;
@@ -591,20 +589,6 @@ static void die_with_log(const char * const format, ...)
   exit(127);
 }
 
-
-// Return a list of distict USB serial numbers for the given config table.
-// Sets no globals.
-static vector<int> get_distinct_usb_serials()
-{
-  vector<int> serials;
-  // TODO: read from a config file.
-  serials.push_back(21);
-  serials.push_back(24);
-  serials.push_back(25);
-  serials.push_back(29);
-  serials.push_back(6);
-  return serials;
-}
 
 // Return a vector of {USB serial numbers, board numbers, pmtboard_u, time offsets}
 // for all USBs in the given table.  Sets no globals.
@@ -655,25 +639,33 @@ static vector<usb_sbop> get_sbops()
   return sbops;
 }
 
-// Returns the number of boards and the highest module number
-static std::pair<int, int> board_count()
+// Finds the list of distinct usb serial numbers.  No side effects.
+static vector<int> get_distinct_usb_serials(const vector<usb_sbop> & sbops)
 {
-  return std::pair<int, int>(40, 240); // TODO: read from config file
+  vector<int> serials;
+  for(unsigned int i = 0; i < sbops.size(); i++)
+    if(serials.end() == find(serials.begin(), serials.end(), sbops[i].serial))
+      serials.push_back(sbops[i].serial);
+  return serials;
+}
+
+
+// Returns the number of boards and the highest module number
+static int sbop_max_board(const vector<usb_sbop> & sbops)
+{
+  int maxb = 0;
+  for(unsigned int i = 0; i < sbops.size(); i++)
+    if(sbops[i].pmtboard_u > maxb)
+      maxb = sbops[i].pmtboard_u;
+  return maxb;
 }
 
 static void setup_from_config()
 {
-  const vector<int> usbserials = get_distinct_usb_serials();
-  numUSB = usbserials.size();
-
-  map<int, int> usbmap; // Maps USB number to numerical ordering of all USBs
-  for(unsigned int i = 0; i < usbserials.size(); i++) {
-    usbmap[usbserials[i]] = i;
-    OVUSBStream[i].SetUSB(usbserials[i]);
-  }
-
-  // Load the time offsets for these boards
   const vector<usb_sbop> sbops = get_sbops();
+
+  const vector<int> usbserials = get_distinct_usb_serials(sbops);
+  numUSB = usbserials.size();
 
   // Create map of UBS_serial to array of pmt board offsets
   for(unsigned int i = 0; i < sbops.size(); i++) {
@@ -681,14 +673,14 @@ static void setup_from_config()
       PMTOffsets[sbops[i].serial] = new int[maxModules];
     if(sbops[i].board < maxModules)
       PMTOffsets[sbops[i].serial][sbops[i].board] = sbops[i].offset;
+
+    // Old comment: "This is a temporary internal mapping used only by the
+    // EBuilder." And then written to the output file...?
+    PMTUniqueMap[1000*sbops[i].serial+sbops[i].board] = sbops[i].pmtboard_u;
   }
 
-  for(unsigned int i = 0; i < usbserials.size(); i++)
-    Datamap[i] = usbmap[usbserials[i]];
-
   // Count the number of boards in this setup
-  const int totalboards = board_count().first;
-  const int max_board   = board_count().second;
+  const int max_board   = sbop_max_board(sbops);
   overflow = new bool[max_board+1];
   maxcount_16ns_hi = new long int[max_board+1];
   maxcount_16ns_lo = new long int[max_board+1];
@@ -696,15 +688,10 @@ static void setup_from_config()
   memset(maxcount_16ns_hi, 0, (max_board+1)*sizeof(long int));
   memset(maxcount_16ns_lo, 0, (max_board+1)*sizeof(long int));
 
-  if((int)sbops.size() != totalboards)
-    die_with_log("Found duplicate pmtboard_u entries\n");
-
-  // This is a temporary internal mapping used only by the EBuilder
-  for(unsigned int i = 0; i < sbops.size(); i++)
-    PMTUniqueMap[1000*sbops[i].serial+sbops[i].board] = sbops[i].pmtboard_u;
-
-  for(unsigned int i = 0; i < numUSB; i++)
-    OVUSBStream[Datamap[i]].SetThresh(Threshold, (int)EBTrigMode);
+  for(unsigned int i = 0; i < numUSB; i++){
+    OVUSBStream[i].SetThresh(Threshold, (int)EBTrigMode);
+    OVUSBStream[i].SetUSB(usbserials[i]);
+  }
 }
 
 static bool run_has_ended = false;
