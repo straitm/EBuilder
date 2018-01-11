@@ -35,9 +35,6 @@ struct usb_sbop{
     serial = serial_;
     board = board_;
     pmtboard_u = pmtboard_u_;
-
-    // TODO: these offsets need to be applied to ADC hits, even though this was
-    // not done for Double Chooz.
     offset = offset_;
   }
 };
