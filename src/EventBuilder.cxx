@@ -71,7 +71,6 @@ static string InputDir; // input data directory
 
 // Set in setup_from_config() and used throughout
 static unsigned int numUSB = 0;
-static map<int, int*> PMTOffsets; // Map to hold offsets for each PMT board
 static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
                                         // to pmtboard_u
 static USBstream OVUSBStream[maxUSB];
@@ -652,12 +651,16 @@ static void setup_from_config(const string & configfile)
   const vector<int> usbserials = get_distinct_usb_serials(sbops);
   numUSB = usbserials.size();
 
-  // Create map of UBS_serial to array of pmt board offsets
   for(unsigned int i = 0; i < sbops.size(); i++) {
-    if(!PMTOffsets.count(sbops[i].serial))
-      PMTOffsets[sbops[i].serial] = new int[maxModules];
-    if(sbops[i].board < maxModules)
-      PMTOffsets[sbops[i].serial][sbops[i].board] = sbops[i].offset;
+    if(sbops[i].board >= maxModules)
+      die_with_log("Error: config references module %d, but max is %d.\n",
+                   sbops[i].board, maxModules-1);
+
+    // Set offsets, clumsily dealing with the indexing of OVUSBStream
+    OVUSBStream[
+      std::find(usbserials.begin(), usbserials.end(), sbops[i].serial)
+      - usbserials.begin()
+    ].SetOffset(sbops[i].board, sbops[i].offset);
 
     // Old comment: "This is a temporary internal mapping used only by the
     // EBuilder." And then written to the output file...?

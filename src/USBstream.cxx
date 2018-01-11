@@ -52,6 +52,15 @@ void USBstream::Reset()
   fsize=0;
 }
 
+void USBstream::SetOffset(const int module, const int off)
+{
+  if(module < 0 || module >= 64){
+     fprintf(stderr, "Ignoring attempt to set offset on module %d\n", module);
+     return;
+  }
+
+  offset[module] = off;
+}
 
 void USBstream::SetThresh(int thresh, int threshtype)
 {
@@ -290,7 +299,23 @@ void USBstream::check_data()
           par ^= data[m];
           if(m<len) {
             if(m<4) {
-              packet.push_back(data[m]);
+              if(m==3) {
+                if(module >= 0 && module <= 63) {
+                  int low = (data[m] & 0xffff) - offset[module];
+                  if(low < 0) {
+                    int high = packet.back() - 1;
+                    if(high < 0) { high += (1 << 13); } // sync packets come every 2^29 clock counts
+                    packet.pop_back(); packet.push_back(high);
+                    low += (1 << 16);
+                    packet.push_back(low);
+                  }
+                  else { packet.push_back(low); }
+                }
+                else { packet.push_back(data[m]); }
+              }
+              else{
+                packet.push_back(data[m]);
+              }
             }
             else {
               if(type) {

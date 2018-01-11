@@ -18,6 +18,18 @@ public:
 
   void SetUSB(int usb) { myusb=usb; }
   void SetThresh(int thresh, int threshtype);
+
+  // Set per-module timing offset on this USB stream.  As per Camillo:
+  //
+  // This is a feature that is included in the firmware of the pmt
+  // board, in Double Chooz was used minimally only in the far detector
+  // to take into account the difference between cable length between
+  // the lower and upper outer veto. Now for the CRT I do not know if we
+  // will have all cables related to clock and sync of the same length
+  // or if we are going to have different cable length between the
+  // front  and the back of the CRT.
+  void SetOffset(const int module, const int off);
+
   void SetBaseline(const int base[64 /* maxModules */][64 /* numChannels */]);
 
   void Reset();
@@ -36,6 +48,7 @@ private:
   int mythresh;
   int myusb;
   int baseline[64 /* maxModules */][64 /* numChannels */];
+  int offset[64 /* maxModules */];
   int adj1[64];
   int adj2[64];
   uint64_t mytolutc;
