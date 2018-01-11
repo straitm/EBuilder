@@ -282,20 +282,19 @@ void USBstream::check_data()
   while(1)
   {
     bool got_packet = false;
-    size_t got = data.size();
 
-    if(!got)
-      break;
-    if(data[0] == 0xffff)
-    {            // check header
-      if(!(got >= 2))
-        break;
+    if(data.empty()) break;
+
+    // First word of all packets other than unix timestamp packets is 0xffff
+    if(data[0] == 0xffff) {
+      if(data.size() < 2) break;
+
       unsigned int len = data[1] & 0xff;
       if(len > 1)
       {
-        if(!(got >= len + 1))
-          break;
-        unsigned int par = 0;
+        if(data.size() < len + 1) break;
+
+        unsigned int parity = 0;
         int8_t module = (data[1] >> 8) & 0x7f;
         int8_t type = data[1] >> 15; // check to see if trigger packets
         std::vector<int32_t> packet;
@@ -304,7 +303,7 @@ void USBstream::check_data()
 
         for(unsigned int m = 1; m <= len; m++)
         {
-          par ^= data[m];
+          parity ^= data[m];
           if(m<len) {
             if(m<4) {
               if(m==3) {
@@ -328,16 +327,13 @@ void USBstream::check_data()
             else {
               if(type) {
                 if(m%2==0) { // ADC charge
-                  if(data[m+1]>63 || data[m+1]<0 || module<0 || module>63) {
-                  }
-                  else {
+                  if(!(data[m+1]>63 || data[m+1]<0 || module<0 || module>63)) {
                     data[m] -= baseline[module][data[m+1]];
                     packet.push_back(data[m]);
                     packet.push_back(data[m+1]);
                     hitarray1[data[m+1]] = true;
-                    if(data[m]>mythresh) {
+                    if(data[m]>mythresh)
                       hitarray2[data[m+1]] = true;
-                    }
                   }
                 }
               }
@@ -352,7 +348,7 @@ void USBstream::check_data()
           }
         }
 
-        if(!par)
+        if(!parity)
         { // check parity
           got_packet = true;
           flush_extra();
