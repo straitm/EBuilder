@@ -250,6 +250,7 @@ bool USBstream::decode()
   return true;
 }
 
+/* This would be better named "process_word()" */
 bool USBstream::got_word(uint64_t d)
 {
   words++;
@@ -269,8 +270,15 @@ bool USBstream::got_word(uint64_t d)
   return 0;
 }
 
+/* This function is called "check_data", but it is clearly not just
+ * checking.  It is decoding. */
 void USBstream::check_data()
 {
+
+  // Try to decode the data in 'data'. Stop trying if 'data' is empty, or
+  // if it starts out right with 0xffff but has nothing else, or if it is
+  // shorter than the length it claims to have.  But otherwise, drop the
+  // first word and try to decode again.
   while(1)
   {
     bool got_packet = false;
@@ -423,6 +431,10 @@ void USBstream::check_data()
 }
 
 /*
+  This function is named "check_debug", but I don't think it is just
+  checking or debugging.  It seems to be decoding and setting variables
+  which are then used later.  Here's the old top-of-function comment:
+
   # c1 dac pmt
   # c2 dac
   # c5 XXXX  -skipped
@@ -432,13 +444,16 @@ void USBstream::check_data()
   # c6 lost_lo
   # c8 timestamp_hi
   # c9 timestamp_lo
-*/
 
+  These refer to the control bytes of DAQ packets.
+*/
 bool USBstream::check_debug(uint64_t d)
 {
   uint32_t a = (d >> 16) & 0xff;
   d = d & 0xffff;
 
+  // Unix-timestamp-high-bits packet - see appendix B.2 of Matt
+  // Toups' thesis.
   if(a == 0xc8)
     {
       time_hi_1 = (d >> 8) & 0xff;
@@ -446,6 +461,8 @@ bool USBstream::check_debug(uint64_t d)
       got_hi = true;
       return 1;
     }
+
+  // Unix-timestamp-low-bits packet - B.2 of Toups thesis
   else if(a == 0xc9)
     {
       if(got_hi)
@@ -465,11 +482,21 @@ bool USBstream::check_debug(uint64_t d)
         }
       return 1;
     }
+
+  // XXX undocumented packet type - only clue is "skipped" in the comment
+  // at the top of this function.
   else if(a == 0xc5)
     {
       word_index = 0;
       return 1;
     }
+
+  // Not explained in Toups thesis.  Top of function says
+  //    c6 data_hi    - number of received data words
+  //    c6 data_lo
+  //    c6 lost_hi     - number of lost data words
+  //    c6 lost_lo
+  // which could be more helpful.
   else if(a == 0xc6)
     {
       word_count[word_index++] = d;
@@ -483,11 +510,16 @@ bool USBstream::check_debug(uint64_t d)
         }
       return 1;
     }
+
+  // Not explained in Toups thesis.  Top of function says "dac pmt"
+  // which isn't much to go on.
   else if(a == 0xc1)
     {
       flush_extra();
       return 1;
     }
+
+  // Not explained in Toups thesis.  Top of function says "dac"...
   else if(a == 0xc2)
     {
       flush_extra();
