@@ -1,33 +1,30 @@
 Originally by M. Toups for Double Chooz, created 9/10/09, updated 11/24/09.
 Now by M. Strait for ProtoDUNE-SP, adaption began 2017.
 
+======================= Purpose and overview of behavior =======================
+
 Combines data streams from individual modules' triggers into a single data
-stream with "events".
+stream with "events", which are sequences of hits close together in time.
+Optionally applies a software threshold per-channel.  Optionally also requires
+hits to be parts of overlapping pairs within a module.
 
-The event builder assumes the existence of the following paths or files:
-  1. DAQ raw data parent folder:         "/data1/OVDAQ/DATA"
-  2. EBuilder output data folder:        "/data/OVDAQ/DATA/"
+The event builder reads data from a directory specified by the user.  The
+data will be read in lexicographic order, and must be named:
 
-The event builder assumes the individual run data folders found in 1, when
-sorted as strings, will be in chronological order. This is fulfilled with the
-current naming convention: Run_${yr}${mon}${day}_${24hr}_${min}
+  ${unix_time_stamp}_${usb_number}
 
-The event builder assumes raw data files have the following name convention:
-  a. ${unix_time_stamp}_${usb_no}.wr        As they are being written by DAQ
-  b. ${unix_time_stamp}_${usb_no}           After being closed by DAQ
-  c. ${unix_time_stamp}_${usb_no}.done      After being processed by EBuilder
+for instance:
 
-By default the EBuilder tries to process the oldest 5 files it finds with naming
-convention b after checking that these belong to distinct USB streams. If it cannot
-find 5 files that fit this criterion, it looks for the newest run in the folder 1.
+  1506152664_23
 
-Compile with "make".
+Once the EBuilder is finished reading a file, it moves it into a subdirectory
+called "decoded/" and renames it with the extension ".done".
 
-================================================================================
+================================== Compiling ===================================
+
+Say "make".  There are no special dependencies.
+
 ============================== Output file format ==============================
-================================================================================
-
-As of 2017-12-22 this is subject to change.
 
 The output file consists of a series of events followed by an end-of-run
 marker.  Events consist of one or more module packets.  Module packets consist
@@ -98,7 +95,7 @@ The format of a module packet is:
   Time stamp: Unsigned 32 bit integer
 
     Number of 16ns ticks since last sync pulse.  Shouldn't usually be more than
-    2^29.
+    2^29 - 1.
 
 The format of a hit is:
 
