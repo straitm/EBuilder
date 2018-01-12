@@ -454,19 +454,24 @@ static string parse_options(int argc, char **argv)
   return configfile;
 
   fail:
-  printf("Usage: %s -i <input data directory> -o <EBuilder_output_disk>\n"
-         "          -c <config file>\n"
-         "         [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
-         "-i : Input data directory - mandatory argument\n"
-         "-o : Output file - mandatory argument\n"
-         "-c : Configuration file giving USB and PMT information\n"
-         "-t : offline threshold (ADC counts) to apply\n"
-         "     [default: 0 (no software threshold)]\n"
-         "-T : offline trigger mode\n"
-         "     0: No threshold\n"
-         "     1: Per-channel threshold\n"
-         "     2: [default] Overlapping pair with both channels over threshold\n",
-         argv[0]);
+  printf(
+    "Usage: %s -i <input data directory> -o <EBuilder_output_disk>\n"
+    "          -c <config file>\n"
+    "         [-t <offline_threshold>] [-T <offline_trigger_mode>]\n"
+    "\n"
+    "Mandatory arguments:\n"
+    "  -i : Input data directory\n"
+    "  -o : Output file\n"
+    "  -c : Configuration file giving USB and PMT information\n"
+    "\n"
+    "Optional arguments:\n"
+    "  -t : offline threshold (ADC counts) to apply\n"
+    "       default: 0 (no software threshold, even negative ADC hits pass)\n"
+    "  -T : offline trigger mode\n"
+    "       0: No threshold\n"
+    "       1: Per-channel threshold\n"
+    "       2: [default] Overlapping pair: both hits over threshold, if any\n",
+    argv[0]);
   exit(127);
 }
 
