@@ -163,13 +163,13 @@ static void check_status(const vector<string> & files)
 //
 // These files are the set that does not have a dot in their name.
 //
-// Also exclude files with names containing "baseline" or "processed" unless
-// 'allow_bl_and_pc' is true.
+// Also exclude files with names containing "baseline" unless
+// 'allow_baseline' is true.
 //
 // Return true if no files are found that satisfy those rules, including if
 // the directory couldn't be read.  Otherwise, returns false.
 static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
-                   const bool allow_bl_and_pc = false)
+                   const bool allow_baseline = false)
 {
   DIR *dp;
   struct dirent *dirp;
@@ -183,8 +183,7 @@ static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
     if(myfname.find(".") != std::string::npos)
       continue;
 
-    if(!allow_bl_and_pc && (myfname.find("baseline")  != std::string::npos ||
-                            myfname.find("processed") != std::string::npos) )
+    if(!allow_baseline && (myfname.find("baseline")  != std::string::npos))
       continue;
 
     myfiles.push_back(myfname);
