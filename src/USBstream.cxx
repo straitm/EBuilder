@@ -100,7 +100,7 @@ void USBstream::GetBaselineData(DataVector *vec)
 // Empirically, returns true if it finds a *Unix* time stamp past the location
 // of myit when called.  Otherwise, returns false and sets myit to myvec.end().
 // Also fills vec with whatever it iterates past.
-bool USBstream::GetNextTimeStamp(DataVector & vec)
+bool USBstream::AdvanceToNextUnixTimeStamp(DataVector & vec)
 {
   for( ; myit != myvec.end(); myit++) {
     vec.push_back(*myit);
