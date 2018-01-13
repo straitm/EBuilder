@@ -38,7 +38,7 @@ public:
   const char* GetFileName() { return myfilename.c_str(); }
   uint64_t GetTOLUTC() const { return mytolutc; }
 
-  bool AdvanceToNextUnixTimeStamp(DataVector & vec);
+  bool GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec);
   void GetBaselineData(DataVector *vec);
   int LoadFile(const std::string nextfile);
   bool decode();

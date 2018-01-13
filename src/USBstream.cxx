@@ -99,9 +99,15 @@ void USBstream::GetBaselineData(DataVector *vec)
 
 // Empirically, returns true if it finds a *Unix* time stamp past the location
 // of myit when called.  Otherwise, returns false and sets myit to myvec.end().
-// Also fills vec with whatever it iterates past.
-bool USBstream::AdvanceToNextUnixTimeStamp(DataVector & vec)
+// Also fills vec with whatever it iterates past in myvec.
+bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
 {
+  if(myit == myvec.end()){
+    printf("No decoded data to send (Unix time stamp %lu) for USB %d\n",
+      mytolutc, myusb);
+    return false;
+  }
+
   for( ; myit != myvec.end(); myit++) {
     vec.push_back(*myit);
 
@@ -115,12 +121,18 @@ bool USBstream::AdvanceToNextUnixTimeStamp(DataVector & vec)
     if(new_time > mytolutc) break;
   }
 
-  if(myit == myvec.end()) return false;
+  if(myit == myvec.end()){
+    printf("Sent decoded data up to end (Unix time stamp %lu) for USB %d\n",
+      mytolutc, myusb);
+    return false;
+  }
 
   mytolutc = ((uint64_t)(*myit)[1] << 24)
            + ((uint64_t)(*myit)[2] << 16)
            + ((uint64_t)(*myit)[3] <<  8)
            + ((uint64_t)(*myit)[4]      );
+
+  printf("Sent decoded data up to Unix time stamp %lu for USB %d\n", mytolutc, myusb);
 
   myit++;
 

@@ -831,6 +831,44 @@ static void setup_signals()
   }
 }
 
+// Waits for new files and returns true if it opened some.  If the run
+// ends or no files are forthcoming, return false.
+static bool HandleOpenNextFileSet()
+{
+  const time_t oldtime = time(0);
+
+  while(!OpenNextFileSet()){ // Try to find new files for each USB
+    if((difftime(time(0), oldtime) > ENDTIME && run_has_ended)
+     || difftime(time(0), oldtime) > MAXTIME) {
+
+      if(run_has_ended)
+        log_msg(LOG_INFO, "Finished processing run\n");
+      else
+        log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
+          "the run was over! Closing output file anyway.\n", MAXTIME);
+
+      return false;
+    }
+    log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
+    sleep(1);
+  }
+  return true;
+}
+
+// Decode the latest set of open input files.  Each is decoded in a
+// separate thread.  The decoded data is kept inside the USBStream
+// objects for later retrieval.
+static void DecodeFileSet()
+{
+  pthread_t threads[numUSB]; // An array of threads to decode files
+
+  for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
+    pthread_create(&threads[j], NULL, decode, (void*) j);
+
+  for(unsigned int j = 0; j < numUSB; j++)
+    pthread_join(threads[j], NULL);
+}
+
 // Reads in data from files into CurrentData until either the maximum
 // number of files has been read or the conditions for stopping the run
 // have been met. A "subrun" is the set of data read in this way. All
@@ -838,45 +876,22 @@ static void setup_signals()
 // by time.
 static void read_in_for_subrun(vector<DataVector> & CurrentData)
 {
-  int nfilesets = 0;
+  for(int nfilesets = 0; nfilesets < max_filesets_subrun; nfilesets++){
+    // Open set of files
+    if(!HandleOpenNextFileSet()) return;
 
-  // XXX this is a loop over numUSB, but within it, all USB streams
-  // are read on every iteration.  What's going on?
-  for(unsigned int i = 0; i < numUSB && nfilesets < max_filesets_subrun; i++){
-    // Until we have a new time stamp on USB i, keep trying to load up and
-    // decode a whole new set of files
-    while(!OVUSBStream[i].AdvanceToNextUnixTimeStamp(CurrentData[i])) {
-      const time_t oldtime = time(0);
+    // Move the data from the files into USBStream objects
+    printf("Decoding file set #%d for this run\n", nfilesets);
+    DecodeFileSet();
 
-      while(!OpenNextFileSet()){ // Try to find new files for each USB
-        if((difftime(time(0), oldtime) > ENDTIME && run_has_ended)
-         || difftime(time(0), oldtime) > MAXTIME) {
+    rename_files_we_have_read();
 
-          if(run_has_ended)
-            log_msg(LOG_INFO, "Finished processing run\n");
-          else
-            log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
-              "the run was over! Closing output file anyway.\n", MAXTIME);
-
-          return;
-        }
-        log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
-        sleep(1);
-      }
-      nfilesets++;
-
-      printf("Decoding file set #%d for this run\n", nfilesets);
-
-      pthread_t threads[numUSB]; // An array of threads to decode files
-
-      for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
-        pthread_create(&threads[j], NULL, decode, (void*) j);
-
-      for(unsigned int j = 0; j < numUSB; j++)
-        pthread_join(threads[j], NULL);
-
-      rename_files_we_have_read();
-    }
+    // Move data from USBStream object into CurrentData's.
+    // XXX worried about this.  It reads up to the Unix time stamp, a
+    // synchronization point, except nothing seems to keep these time stamps
+    // synchronized between the several USB streams.
+    for(unsigned int j = 0; j < numUSB; j++)
+      OVUSBStream[j].GetDecodedDataUpToNextUnixTimeStamp(CurrentData[j]);
   }
 }
 
@@ -888,10 +903,6 @@ static void MainBuild()
 
   for(unsigned int subrun = 0; !run_has_ended; subrun++){
     read_in_for_subrun(CurrentData);
-
-    // Advance all of these to the end.  Experimentally, it seems necessary.
-    for(unsigned int i = 0; i < numUSB; i++)
-      OVUSBStream[i].AdvanceToNextUnixTimeStamp(CurrentData[i]);
 
     const unsigned int BUFSIZE = 1024;
     char outfile[BUFSIZE];
