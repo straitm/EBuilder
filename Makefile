@@ -9,7 +9,7 @@ INC =  -I./include
 
 PREFIX=/home/strait
 
-CXXFLAGS      = -O2 -Wunused -Wall -Wextra $(INC)
+CXXFLAGS      = -O2 -Wunused -Wall -Wextra -Wshadow $(INC)
 LDFLAGS       = -pthread
 SOFLAGS       = -shared
 

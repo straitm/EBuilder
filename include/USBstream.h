@@ -101,7 +101,6 @@ struct OVHitData {
     return true;
   }
 
-  uint16_t magic;
   uint8_t channel;
   int16_t charge;
 };
