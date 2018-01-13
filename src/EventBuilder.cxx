@@ -39,6 +39,18 @@ struct usb_sbop{
   }
 };
 
+// Read up to this many sets of files from the DAQ before opening a new
+// output file. The bigger this number is, the more memory is used,
+// because no built data is written out until all files are read in.
+// However, when we write out, we lose the ability to sort later data
+// into place if it overlaps in time with data already written out. This
+// can happen because times that the DAQ closes each USB stream's file
+// are approximate.
+//
+// Nominally each DAQ file is 5 seconds of data, so 12 means we suffer
+// this effect once per minute.
+const int max_filesets_subrun = 12;
+
 static const int maxUSB=10; // Maximum number of USB streams
 static const int latency=5; // Seconds before DAQ switches files.
                             // FixME: 5 anticipated for far detector
@@ -711,7 +723,7 @@ static bool write_end_block_and_close(const int data_fd)
 // have not really figured out what they are yet. Sorry sorry sorrysorrysorry.
 // In some fashion it does the building of the available data and leaves the
 // unbuilt data for the next try.  It returns the number of events built.
-static unsigned int SuperBuildEvents(DataVector * CurrentData,
+static unsigned int SuperBuildEvents(vector<DataVector> & CurrentData,
                                      const int fd)
 {
   // I don't know how many of these need to be static
@@ -819,6 +831,81 @@ static void setup_signals()
   }
 }
 
+// Reads in data from files into CurrentData until either the maximum
+// number of files has been read or the conditions for stopping the run
+// have been met. A "subrun" is the set of data read in this way. All
+// data for a subrun is kept in memory together so that it can be sorted
+// by time.
+static void read_in_for_subrun(vector<DataVector> & CurrentData)
+{
+  int nfilesets = 0;
+
+  // XXX this is a loop over numUSB, but within it, all USB streams
+  // are read on every iteration.  What's going on?
+  for(unsigned int i = 0; i < numUSB && nfilesets < max_filesets_subrun; i++){
+    // Until we have a new time stamp on USB i, keep trying to load up and
+    // decode a whole new set of files
+    while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]))) {
+      const time_t oldtime = time(0);
+
+      while(!OpenNextFileSet()){ // Try to find new files for each USB
+        if((difftime(time(0), oldtime) > ENDTIME && run_has_ended)
+         || difftime(time(0), oldtime) > MAXTIME) {
+
+          if(run_has_ended)
+            log_msg(LOG_INFO, "Finished processing run\n");
+          else
+            log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
+              "the run was over! Closing output file anyway.\n", MAXTIME);
+
+          return;
+        }
+        log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
+        sleep(1);
+      }
+      nfilesets++;
+
+      printf("Decoding file set #%d for this run\n", nfilesets);
+
+      pthread_t threads[numUSB]; // An array of threads to decode files
+
+      for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
+        pthread_create(&threads[j], NULL, decode, (void*) j);
+
+      for(unsigned int j = 0; j < numUSB; j++)
+        pthread_join(threads[j], NULL);
+
+      rename_files_we_have_read();
+    }
+  }
+}
+
+// Do everything after the setup steps and the baseline determinations.
+// Reads data and writes out subrun files until there's no more to do.
+static void MainBuild()
+{
+  vector<DataVector> CurrentData(maxUSB); // for current timestamp to process
+
+  for(unsigned int subrun = 0; !run_has_ended; subrun++){
+    read_in_for_subrun(CurrentData);
+
+    // Advance all of these to the end.  Experimentally, it seems necessary.
+    for(unsigned int i = 0; i < numUSB; i++)
+      OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]));
+
+    const unsigned int BUFSIZE = 1024;
+    char outfile[BUFSIZE];
+    snprintf(outfile, BUFSIZE, "%s_%05u", OutBase.c_str(), subrun);
+    const int fd = open_file(outfile);
+
+    const unsigned int EventCounter = SuperBuildEvents(CurrentData, fd);
+    write_end_block_and_close(fd);
+
+    log_msg(LOG_INFO, "Number of built events: %d\nProcessed time stamp: %d\n",
+            EventCounter, OVUSBStream[0].GetTOLUTC());
+  }
+}
+
 int main(int argc, char **argv)
 {
   const string configfile = parse_options(argc, argv);
@@ -828,82 +915,7 @@ int main(int argc, char **argv)
   LoadBaselineData();
   InitRun();
 
-  DataVector CurrentData[maxUSB]; // for current timestamp to process
-
-  for(unsigned int subrun = 0; /* forever */; subrun++){
-    // Read up to this many sets of files from the DAQ before opening a
-    // new output file.
-
-    // XXX placeholder until I understand the DAQ better
-    const int max_filesets_subrun = 2;
-
-    int nfilesets = 0;
-
-    // XXX this is a loop over numUSB, but within it, all USB streams
-    // are read on every iteration.  What's going on?
-    for(unsigned int i = 0; i < numUSB && nfilesets < max_filesets_subrun; i++){
-      // Until we have a new time stamp on USB i, keep trying to load up and
-      // decode a whole new set of files
-      while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]))) {
-        const time_t oldtime = time(0);
-
-        while(!OpenNextFileSet()){ // Try to find new files for each USB
-          if((difftime(time(0), oldtime) > ENDTIME && run_has_ended)
-           || difftime(time(0), oldtime) > MAXTIME) {
-
-            if(run_has_ended)
-              log_msg(LOG_INFO, "Finished processing run\n");
-            else
-              log_msg(LOG_ERR, "No new files for %ds, but I didn't hear that "
-                "the run was over! Closing output file anyway.\n", MAXTIME);
-
-            goto out; // break 3
-          }
-          log_msg(LOG_INFO, "Files are not ready. Waiting...\n");
-          sleep(1);
-        }
-        nfilesets++;
-
-        printf("Decoding file set #%d for this run\n", nfilesets);
-
-        pthread_t threads[numUSB]; // An array of threads to decode files
-
-        for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
-          pthread_create(&threads[j], NULL, decode, (void*) j);
-
-        for(unsigned int j = 0; j < numUSB; j++)
-          pthread_join(threads[j], NULL);
-
-        rename_files_we_have_read();
-      }
-    }
-    out:
-
-    // Advance all of these to the end.  Experimentally, it seems necessary.
-    for(unsigned int i = 0; i < numUSB; i++)
-      OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]));
-
-    // We don't actually write out any data until we've failed to find
-    // new files for a while or it's been declared that the run is over?
-    // That seems like it might be problematic.
-    //
-    // Not sure why we advance the subrun counter if and only if this
-    // has happened, either.
-
-    const unsigned int BUFSIZE = 1024;
-    char outfile[BUFSIZE];
-    snprintf(outfile, BUFSIZE, "%s_%05u", OutBase.c_str(), subrun);
-    const int fd = open_file(outfile);
-
-    const unsigned int EventCounter = SuperBuildEvents(CurrentData, fd);
-
-    log_msg(LOG_INFO, "Number of built events: %d\nProcessed time stamp: %d\n",
-            EventCounter, OVUSBStream[0].GetTOLUTC());
-    write_end_block_and_close(fd);
-    if(run_has_ended) break;
-  }
-
-  log_msg(LOG_WARNING, "Normally this program should not terminate like this...\n");
+  MainBuild();
 
   return 0;
 }
