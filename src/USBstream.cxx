@@ -84,12 +84,15 @@ void USBstream::SetBaseline(
 
 void USBstream::GetBaselineData(DataVector *vec)
 {
-  vec->clear();
-  for(myit = myvec.begin(); myit != myvec.end(); myit++) {
-    if(myit->size() > 7) {
-      vec->push_back(*myit);
-    }
+  if(!vec->empty()){
+    fprintf(stderr, "Expected vec to be empty for GetBaselineData()\n");
+    exit(1);
   }
+
+  for(myit = myvec.begin(); myit != myvec.end(); myit++)
+    if(myit->size() > 7)
+      vec->push_back(*myit);
+
   time_hi_1 = time_hi_2 = 0;
   time_lo_1 = time_lo_2 = 0;
 }
