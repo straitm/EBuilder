@@ -845,7 +845,7 @@ static void read_in_for_subrun(vector<DataVector> & CurrentData)
   for(unsigned int i = 0; i < numUSB && nfilesets < max_filesets_subrun; i++){
     // Until we have a new time stamp on USB i, keep trying to load up and
     // decode a whole new set of files
-    while(!OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]))) {
+    while(!OVUSBStream[i].GetNextTimeStamp(CurrentData[i])) {
       const time_t oldtime = time(0);
 
       while(!OpenNextFileSet()){ // Try to find new files for each USB
@@ -891,7 +891,7 @@ static void MainBuild()
 
     // Advance all of these to the end.  Experimentally, it seems necessary.
     for(unsigned int i = 0; i < numUSB; i++)
-      OVUSBStream[i].GetNextTimeStamp(&(CurrentData[i]));
+      OVUSBStream[i].GetNextTimeStamp(CurrentData[i]);
 
     const unsigned int BUFSIZE = 1024;
     char outfile[BUFSIZE];

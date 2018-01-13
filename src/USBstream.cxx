@@ -94,33 +94,31 @@ void USBstream::GetBaselineData(DataVector *vec)
   time_lo_1 = time_lo_2 = 0;
 }
 
-// Empirically, returns true if it finds a time stamp past the location of myit
-// when called.  Otherwise, returns false and sets myit to myvec.end(). Also
-// fills vec with whatever it iterates past.
-bool USBstream::GetNextTimeStamp(DataVector *vec)
+// Empirically, returns true if it finds a *Unix* time stamp past the location
+// of myit when called.  Otherwise, returns false and sets myit to myvec.end().
+// Also fills vec with whatever it iterates past.
+bool USBstream::GetNextTimeStamp(DataVector & vec)
 {
-  while(1) {
-    if(myit==myvec.end())
-      return false;
+  for( ; myit != myvec.end(); myit++) {
+    vec.push_back(*myit);
 
-    vec->push_back(*myit);
+    if(myit->size() <= 4) continue;
 
-    if((*myit).size()>4) { // Look for next time stamp and break
-      uint64_t tmp = (*myit)[1] << 8;
-      if(tmp + (*myit)[2] > ((mytolutc >> 16) & 0xffff)) {
-        break;
-      }
-      else if(tmp + (*myit)[2] == ((mytolutc >> 16) & 0xffff)) {
-        tmp = (*myit)[3] << 8;
-        if(tmp + (*myit)[4] > (mytolutc & 0xffff)) {
-          break;
-        }
-      }
-    }
-    myit++;
+    const uint64_t new_time = ((uint64_t)(*myit)[1] << 24)
+                            + ((uint64_t)(*myit)[2] << 16)
+                            + ((uint64_t)(*myit)[3] <<  8)
+                            + ((uint64_t)(*myit)[4]      );
+
+    if(new_time > mytolutc) break;
   }
-  const uint64_t tmp = ((*myit)[1] << 8) + (*myit)[2];
-  mytolutc = (tmp << 16) + ((*myit)[3] << 8) + (*myit)[4];
+
+  if(myit == myvec.end()) return false;
+
+  mytolutc = ((uint64_t)(*myit)[1] << 24)
+           + ((uint64_t)(*myit)[2] << 16)
+           + ((uint64_t)(*myit)[3] <<  8)
+           + ((uint64_t)(*myit)[4]      );
+
   myit++;
 
   return true;
