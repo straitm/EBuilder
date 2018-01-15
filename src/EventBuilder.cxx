@@ -104,7 +104,7 @@ static long int *maxcount_16ns_hi; // for sync overflows for all boards
 static void *decode(void *ptr) // This defines a thread to decode files
 {
   long int usb = (long int) ptr; // XXX munging a void* into an int!
-  while(!OVUSBStream[(int)usb].decode()) usleep(100);
+  OVUSBStream[(int)usb].decode();
   return NULL;
 }
 

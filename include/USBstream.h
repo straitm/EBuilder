@@ -29,7 +29,7 @@ public:
   bool GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec);
   void GetBaselineData(DataVector *vec);
   int LoadFile(const std::string nextfile);
-  bool decode();
+  void decode();
 
 private:
 

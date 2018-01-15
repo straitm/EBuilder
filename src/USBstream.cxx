@@ -179,8 +179,12 @@ int USBstream::LoadFile(std::string nextfile)
   return 0;
 }
 
-bool USBstream::decode()
+void USBstream::decode()
 {
+  top: // we return here if triggered by restart leading from finding
+       // something-something-something about a Unix timestamp packet
+       // on the line marked beltshortcrimefight.
+
   char filedata[0xffff];//data buffer
 
   if(!myFile->is_open())
@@ -240,7 +244,7 @@ bool USBstream::decode()
                         myit=myvec.end();
                         myFile->seekg(std::ios::beg);
                         data.clear();
-                        return false;
+                        goto top;
                       }
                     }
                 }
@@ -264,7 +268,6 @@ bool USBstream::decode()
   IsOpen = false;
 
   myit=myvec.begin();
-  return true;
 }
 
 /* This would be better named "process_word()" */
@@ -486,6 +489,7 @@ bool USBstream::check_debug(uint64_t d)
           flush_extra();
 
           // Check to see if first time stamp found and if so, rewind file
+          // (This cryptic line tagged: beltshortcrimefight)
           if(!mytolutc) {
             mytolutc = (time_hi_1 << 8) + time_hi_2;
             mytolutc = (mytolutc << 16) + (time_lo_1 << 8) + time_lo_2;
