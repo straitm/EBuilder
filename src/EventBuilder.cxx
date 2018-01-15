@@ -88,8 +88,11 @@ static string InputDir; // input data directory
 
 // Set in setup_from_config() and used throughout
 static unsigned int numUSB = 0;
-static map<int, uint16_t> PMTUniqueMap; // Maps 1000*USB_serial + board_number
-                                        // to pmtboard_u
+
+// Maps {USB_serial, board_number}, the input numbering convention, to
+// pmtboard_u, the output numbering convention
+static map<std::pair<int, int>, uint16_t> PMTUniqueMap;
+
 static USBstream OVUSBStream[maxUSB];
 
 // *Size* set in setup_from_config()
@@ -341,11 +344,11 @@ static void BuildEvent(const DataVector & in_packets,
     const int module_local = (packet.at(0) >> 8) & 0x7f;
     // EBuilder temporary internal mapping is decoded back to pmtboard_u
     const int usb = OVUSBStream[OutIndex[packeti]].GetUSB();
-    if(!PMTUniqueMap.count(usb*1000+module_local)){
+    if(!PMTUniqueMap.count(std::pair<int, int>(usb, module_local)))
       log_msg(LOG_ERR, "Got unknown module number %d on USB %d\n",
               module_local, usb);
-    }
-    const int16_t module = PMTUniqueMap[usb*1000+module_local];
+
+    const int16_t module = PMTUniqueMap[std::pair<int, int>(usb, module_local)];
     const int8_t type = packet.at(0) >> 15;
     const int32_t time_16ns_hi = packet.at(5);
     const int32_t time_16ns_lo = packet.at(6);
@@ -647,9 +650,9 @@ static void setup_from_config(const string & configfile)
       - usbserials.begin()
     ].SetOffset(sbops[i].board, sbops[i].offset);
 
-    // Old comment: "This is a temporary internal mapping used only by the
-    // EBuilder." And then written to the output file...?
-    PMTUniqueMap[1000*sbops[i].serial+sbops[i].board] = sbops[i].pmtboard_u;
+    // Maps input numbering convention to output numbering convention.
+    PMTUniqueMap[std::pair<int, int>(sbops[i].serial, sbops[i].board)]
+      = sbops[i].pmtboard_u;
   }
 
   // Count the number of boards in this setup
