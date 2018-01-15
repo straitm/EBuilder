@@ -428,7 +428,7 @@ void USBstream::check_data()
 
   # c1 dac pmt
   # c2 dac
-  # c5 XXXX  -skipped
+  # c5 ....  -skipped
   # c6 data_hi    - number of received data words
   # c6 data_lo
   # c6 lost_hi     - number of lost data words
