@@ -42,7 +42,6 @@ private:
   uint64_t mytolutc;
   std::string myfilename;
   std::fstream *myFile;
-  bool IsOpen;
   bool BothLayerThresh;
   bool UseThresh;
   DataVector myvec;
@@ -66,13 +65,11 @@ private:
 
   // XXX this is signed, but gets things cast to unsigned pushed into it.
   // Probably they get cast back and forth and happen to be right in the end...
-  std::deque<int32_t> data;      // 11
+  std::deque<int32_t> data;
 
-  bool extra;                     // leftovers
+  bool extra; // leftovers
   unsigned int word_index;
   unsigned int word_count[4];
-  int bytesleft;
-  int fsize;
 };
 
 struct OVHitData {

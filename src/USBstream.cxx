@@ -31,11 +31,8 @@ USBstream::USBstream()
   word_count[1] = 0;
   word_count[2] = 0;
   word_count[3] = 0;
-  bytesleft=0;
-  fsize=0;
   myvec.reserve(0xffff);
   myit=myvec.begin();
-  IsOpen = false;
   BothLayerThresh = false;
   UseThresh = false;
   for(int i = 0; i < 32; i++) { // Map of adjacent channels
@@ -56,8 +53,6 @@ void USBstream::Reset()
   word_count[1] = 0;
   word_count[2] = 0;
   word_count[3] = 0;
-  bytesleft=0;
-  fsize=0;
 }
 
 void USBstream::SetOffset(const int module, const int off)
@@ -153,15 +148,13 @@ int USBstream::LoadFile(std::string nextfile)
   myfilename = smyfilename.str();
 
   struct stat myfileinfo;
-  if(!IsOpen) {
+  if(myFile == NULL || !myFile->is_open()) {
     myFile = new std::fstream(myfilename.c_str(),
                               std::fstream::in | std::fstream::binary);
     if(myFile == NULL || myFile->is_open()) {
       if(stat(myfilename.c_str(), &myfileinfo) == 0 &&
-         myfileinfo.st_size) {
-        IsOpen = true;
+         myfileinfo.st_size)
         return 1;
-      }
       myFile->close();
       delete myFile;
       log_msg(LOG_ERR, "USB %d has died. Exiting.\n", myusb);
@@ -185,89 +178,71 @@ void USBstream::decode()
        // something-something-something about a Unix timestamp packet
        // on the line marked beltshortcrimefight.
 
-  char filedata[0xffff];//data buffer
+  const unsigned int BUFSIZE = 0x10000;
 
-  if(!myFile->is_open())
-    log_msg(LOG_CRIT, "File not open! Exiting.\n");
+  char filedata[BUFSIZE];//data buffer
 
-  if(myit==myvec.end()) {
-    myvec.clear();
-  }
-  else if(myit<myvec.end()) {
-    myvec.assign(myit,myvec.end());
-  }
+  if(!myFile->is_open()) log_msg(LOG_CRIT, "File not open! Exiting.\n");
+
+  if     (myit == myvec.end()) myvec.clear();
+  else if(myit  < myvec.end()) myvec.assign(myit, myvec.end());
 
   Reset();
 
   struct stat fileinfo;
-  if(stat(myfilename.c_str(), &fileinfo) == 0) //get file size
-    bytesleft = fileinfo.st_size;
+  if(stat(myfilename.c_str(), &fileinfo) == -1)
+    log_msg(LOG_CRIT, "File %s stopped being readable!\n", myfilename.c_str());
+
+  unsigned int bytesleft = fileinfo.st_size;
+  unsigned int bytestoread = 0;
 
   uint64_t word = 0; // holds 24-bit word being built, must be unsigned
   char exp = 0;        // expecting this type next
-  int counter=0;
 
-  while(true)//loop over buffer packets
-    {
-      counter++;
-      if(bytesleft < 0xffff)
-        fsize = bytesleft;
+  do{
+    bytestoread = std::min(BUFSIZE, bytesleft);
+    bytesleft -= bytestoread;
 
-      else
-        {
-          fsize = 0xffff;
-          bytesleft -= 0xffff;
+    myFile->read(filedata, bytestoread);
+
+    for(unsigned int bytedex = 0; bytedex < bytestoread; bytedex++){
+      const char payload = filedata[bytedex] & 0x3f;
+      const char pretype = (filedata[bytedex] >> 6) & 3;
+      if(pretype == 0){ //not handling type very well.
+        exp = 1;
+        word = payload;
+      }
+      else if(pretype == exp){
+        word = (word << 6) | payload;
+        if(++exp == 4){
+          exp = 0;
+
+          if(got_word(word)) { //24-bit word stored, process it
+            restart = false;
+            myit = myvec.end();
+            myFile->seekg(std::ios::beg);
+            data.clear();
+            goto top;
+          }
         }
-
-      myFile->read(filedata, fsize);//read data of appropriate size
-
-      for(int bytedex = 0; bytedex < fsize; bytedex++)//loop over members in buffer
-        {
-          char payload = filedata[bytedex] & 63;
-          char pretype = (filedata[bytedex] >> 6) & 3;
-          if(pretype == 0) //not handling type very well.
-            {
-              exp = 1;
-              word = payload;
-            }
-          else
-            {
-              if(pretype == exp)
-                {
-                  word = (word << 6) | payload; //bitwise OR
-                  if(++exp == 4)
-                    {
-                      exp = 0;
-
-                      if(got_word(word)) { //24-bit word stored, process it
-                        restart = false;
-                        myit=myvec.end();
-                        myFile->seekg(std::ios::beg);
-                        data.clear();
-                        goto top;
-                      }
-                    }
-                }
-              else
-                {
-                  log_msg(LOG_WARNING, "Found corrupted data in file %s: "
-                    "expected %d, got %d\n", myfilename.c_str(), exp, pretype);
-                  exp = 0;
-                }
-            }
-        }
-      if(fsize==bytesleft) //exit the loop after last read
-        break;
+      }
+      else{
+        log_msg(LOG_WARNING, "Found corrupted data in file %s: "
+          "expected %d, got %d\n", myfilename.c_str(), exp, pretype);
+        exp = 0;
+      }
     }
+  }while(bytestoread != bytesleft);
+
   //extra.push_back(data); // Uncommenting these lines assumes OVDAQ only
                            // writes complete packets to disk at start/end of files
   //flush_extra();         // For now this is not true
 
   if(myFile->is_open()) myFile->close();
   delete myFile;
-  IsOpen = false;
+  myFile = NULL;
 
-  myit=myvec.begin();
+  myit = myvec.begin();
 }
 
 /* This would be better named "process_word()" */
