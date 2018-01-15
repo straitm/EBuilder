@@ -101,10 +101,10 @@ static long int *maxcount_16ns_lo; // Keeps track of max clock count
 static long int *maxcount_16ns_hi; // for sync overflows for all boards
 
 
-static void *decode(void *ptr) // This defines a thread to decode files
+// Decodes USB stream with array index *usbindex. For threading.
+static void * decode(void * usbindex)
 {
-  long int usb = (long int) ptr; // XXX munging a void* into an int!
-  OVUSBStream[(int)usb].decode();
+  OVUSBStream[*((int *)usbindex)].decode();
   return NULL;
 }
 
@@ -561,7 +561,7 @@ static bool GetBaselines()
   // Decode all files and load into memory
   for(unsigned int j = 0; j < numUSB; j++){
     log_msg(LOG_INFO, "Decoding baseline %d\n", j),
-    decode((void*) j);
+    OVUSBStream[j].decode();
   }
 
   int baselines[maxModules][numChannels] = { { } };
@@ -837,8 +837,11 @@ static void DecodeFileSet()
 {
   pthread_t threads[numUSB]; // An array of threads to decode files
 
-  for(unsigned int j = 0; j < numUSB; j++) // Load all files in at once
-    pthread_create(&threads[j], NULL, decode, (void*) j);
+  int indices[numUSB]; // arguments for pthread.
+  for(unsigned int j = 0; j < numUSB; j++){ // Load all files in at once
+    indices[j] = j;
+    pthread_create(&threads[j], NULL, decode, &indices[j]);
+  }
 
   for(unsigned int j = 0; j < numUSB; j++)
     pthread_join(threads[j], NULL);
