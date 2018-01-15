@@ -67,6 +67,13 @@ static const int numChannels=64; // Number of channels in M64
 static const int maxModules=64; // Maximum number of modules PER USB
                                 // (okay if less than total number of modules)
 
+// Map from USB serial numbers to their location in array of OVUSBStreams
+// (sigh).  Filled in setup_from_config().
+static map<int, int> usbserial_to_usbindex;
+
+// Filled in GetBaselines and copied into USB. Scandalously waste of memory.
+static int baselines[maxUSB][maxModules][numChannels] = { { { } } };
+
 // Will stop if we haven't seen a new input file in ENDTIME seconds when
 // we know the run is over or MAXTIME seconds regardless. For Double
 // Chooz, MAXTIME was 60.
@@ -313,7 +320,7 @@ static bool OpenNextFileSet()
 }
 
 static void BuildEvent(const DataVector & in_packets,
-                       const vector<int32_t> & OutIndex, const int fd)
+                       const vector<int> & OutIndex, const int fd)
 {
   if(fd <= 0)
     log_msg(LOG_CRIT, "Fatal Error in BuildEvent(). Invalid file "
@@ -324,18 +331,20 @@ static void BuildEvent(const DataVector & in_packets,
     return;
   }
 
-  const std::vector<int32_t> & firstpacket = in_packets[0];
-  const int32_t time_s = (firstpacket.at(1) << 24) + (firstpacket.at(2) << 16) +
-                         (firstpacket.at(3) <<  8) +  firstpacket.at(4);
+  const std::vector<uint16_t> & firstpacket = in_packets[0];
+
   OVEventHeader evheader;
-  evheader.time_sec = time_s;
+  evheader.time_sec = ((uint32_t)firstpacket.at(1) << 24)
+                    + ((uint32_t)firstpacket.at(2) << 16)
+                    + ((uint32_t)firstpacket.at(3) <<  8)
+                    +  (uint32_t)firstpacket.at(4);
   evheader.n_ov_data_packets = in_packets.size();
 
   if(!evheader.writeout(fd))
     log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
 
   for(unsigned int packeti = 0; packeti < in_packets.size(); packeti++){
-    const std::vector<int32_t> & packet = in_packets[packeti];
+    const std::vector<uint16_t> & packet = in_packets[packeti];
 
     if(packet.size() < 7)
       log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < 7\n",
@@ -350,9 +359,9 @@ static void BuildEvent(const DataVector & in_packets,
 
     const int16_t module = PMTUniqueMap[std::pair<int, int>(usb, module_local)];
     const int8_t type = packet.at(0) >> 15;
-    const int32_t time_16ns_hi = packet.at(5);
-    const int32_t time_16ns_lo = packet.at(6);
-    const uint32_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
+    const uint16_t time_16ns_hi = packet.at(5);
+    const uint16_t time_16ns_lo = packet.at(6);
+    const uint32_t time_16ns= ((uint32_t)time_16ns_hi << 16)+time_16ns_lo;
 
     if(type != kOVR_ADC){
       log_msg(LOG_ERR, "Got non-ADC packet, type %d. Not supported!\n", type);
@@ -365,7 +374,7 @@ static void BuildEvent(const DataVector & in_packets,
     if( (time_16ns_hi >> (SYNC_PULSE_CLK_COUNT_PERIOD_LOG2 - 16)) ) {
       if(!overflow[module]) {
         log_msg(LOG_WARNING, "Module %d missed sync pulse near "
-          "time stamp %ld\n", module, time_s);
+          "time stamp %ld\n", module, evheader.time_sec);
         overflow[module] = true;
       }
       maxcount_16ns_lo[module] = time_16ns_lo;
@@ -394,7 +403,12 @@ static void BuildEvent(const DataVector & in_packets,
     for(int m = 0; m < moduleheader.nHits; m++) {
       OVHitData hit;
       hit.channel = packet.at(8+2*m);
-      hit.charge = packet.at(7+2*m);
+
+      // Baseline substraction happens here, not in decode()
+      hit.charge = packet.at(7+2*m)
+                   - baselines[usbserial_to_usbindex[usb]]
+                              [module_local]
+                              [hit.channel];
 
       if(!hit.writeout(fd))
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
@@ -564,13 +578,11 @@ static bool GetBaselines()
     OVUSBStream[j].decode();
   }
 
-  int baselines[maxModules][numChannels] = { { } };
-
   for(unsigned int i = 0; i < numUSB; i++) {
     DataVector BaselineData;
     OVUSBStream[i].GetBaselineData(&BaselineData);
-    CalculatePedestal(baselines, BaselineData);
-    OVUSBStream[i].SetBaseline(baselines);
+    CalculatePedestal(baselines[i], BaselineData);
+    OVUSBStream[i].SetBaseline(baselines[i]);
   }
 
   return true;
@@ -639,6 +651,10 @@ static void setup_from_config(const string & configfile)
   const vector<int> usbserials = get_distinct_usb_serials(sbops);
   numUSB = usbserials.size();
 
+  // Helpful for baseline substraction later on
+  for(unsigned int i = 0; i < usbserials.size(); i++)
+    usbserial_to_usbindex[usbserials[i]] = i;
+
   for(unsigned int i = 0; i < sbops.size(); i++) {
     if(sbops[i].board >= maxModules)
       log_msg(LOG_CRIT, "Error: config references module %d, but max is %d.\n",
@@ -704,10 +720,10 @@ static unsigned int SuperBuildEvents(vector<DataVector> & CurrentData,
   // I don't know how many of these need to be static
   static DataVector::iterator CurrentDataIt[maxUSB];
   static DataVector MinData; // Current minimum data packets
-  static vector<int32_t> MinDataPacket; // Minimum and Last Data Packets added
-  static vector<int32_t> MinIndex; // USB indices of Minimum Data Packet
+  static vector<uint16_t> MinDataPacket; // Minimum and Last Data Packets added
+  static vector<int> MinIndex; // USB indices of Minimum Data Packet
   static DataVector ExtraData; // carries over events from last time stamp
-  static vector<int32_t> ExtraIndex;
+  static vector<int> ExtraIndex;
 
   unsigned int EventCounter = 0;
   // index of minimum event added to USB stream
@@ -730,7 +746,7 @@ static unsigned int SuperBuildEvents(vector<DataVector> & CurrentData,
     MinDataPacket = *(CurrentDataIt[imin]);
 
     for(unsigned int k = 0; k < numUSB; k++) { // Loop over USB streams, find minimum
-      vector<int32_t> CurrentDataPacket = *(CurrentDataIt[k]);
+      vector<uint16_t> CurrentDataPacket = *(CurrentDataIt[k]);
 
       // Find real minimum; no clock slew
       if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {

@@ -6,5 +6,5 @@ void log_msg(const int priority, const char * const format, ...);
 
 void start_log();
 
-bool LessThan(const std::vector<int32_t> & lhs,
-              const std::vector<int32_t> & rhs, int ClockSlew);
+bool LessThan(const std::vector<uint16_t> & lhs,
+              const std::vector<uint16_t> & rhs, const int ClockSlew);

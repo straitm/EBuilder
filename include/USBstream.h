@@ -58,14 +58,12 @@ private:
   bool got_hi;
   bool restart;
   bool first_packet;
-  int32_t time_hi_1;
-  int32_t time_hi_2;
-  int32_t time_lo_1;
-  int32_t time_lo_2;
+  uint16_t time_hi_1;
+  uint16_t time_hi_2;
+  uint16_t time_lo_1;
+  uint16_t time_lo_2;
 
-  // XXX this is signed, but gets things cast to unsigned pushed into it.
-  // Probably they get cast back and forth and happen to be right in the end...
-  std::deque<int32_t> data;
+  std::deque<uint16_t> data;
 
   bool extra; // leftovers
   unsigned int word_index;
@@ -128,5 +126,5 @@ struct OVDataPacketHeader {
 
   uint8_t nHits;
   uint16_t module;
-  uint32_t time16ns; // Was int64_t, but I think is always {0..0xffffffff}
+  uint32_t time16ns; // 32 bit counter, but should usually be < 2^29-1
 };

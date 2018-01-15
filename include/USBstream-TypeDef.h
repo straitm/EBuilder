@@ -1,1 +1,1 @@
-typedef std::vector<std::vector<int32_t> > DataVector;
+typedef std::vector<std::vector<uint16_t> > DataVector;

@@ -292,7 +292,7 @@ void USBstream::check_data()
         unsigned int parity = 0;
         int8_t module = (data[1] >> 8) & 0x7f;
         int8_t type = data[1] >> 15; // check to see if trigger packets
-        std::vector<int32_t> packet;
+        std::vector<uint16_t> packet;
         bool hitarray1[64] = {0};
         bool hitarray2[64] = {0};
 
@@ -322,13 +322,16 @@ void USBstream::check_data()
             else {
               if(type) {
                 if(m%2==0) { // ADC charge
-                  if(!(data[m+1]>63 || data[m+1]<0 || module<0 || module>63)) {
-                    data[m] -= baseline[module][data[m+1]];
+                  if(data[m+1] < 64 && module < 64) {
+                    // Baseline subtraction can make ADC negative.  Use signed
+                    // value here, but do not modify the value in packet. This
+                    // is done when writing out.
+                    const int adc = data[m] - baseline[module][data[m+1]];
+                    if(adc > mythresh) hitarray2[data[m+1]] = true;
+
                     packet.push_back(data[m]);
                     packet.push_back(data[m+1]);
                     hitarray1[data[m+1]] = true;
-                    if(data[m]>mythresh)
-                      hitarray2[data[m+1]] = true;
                   }
                 }
               }
@@ -440,7 +443,7 @@ void USBstream::check_data()
 */
 bool USBstream::check_debug(uint64_t d)
 {
-  uint32_t a = (d >> 16) & 0xff;
+  uint16_t a = (d >> 16) & 0xff;
   d = d & 0xffff;
 
   // Unix-timestamp-high-bits packet - see appendix B.2 of Matt

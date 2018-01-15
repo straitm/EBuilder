@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -29,19 +30,18 @@ void start_log()
   log_msg(LOG_NOTICE, "OV Event Builder Started\n");
 }
 
-// XXX the input vectors seem to be representing only 8-bit values
-bool LessThan(const std::vector<int32_t> & lhs,
-              const std::vector<int32_t> & rhs, int ClockSlew)
+bool LessThan(const std::vector<uint16_t> & lhs,
+              const std::vector<uint16_t> & rhs, const int ClockSlew)
 {
   if(lhs.size() < 7 || rhs.size() < 7) {
     log_msg(LOG_ERR,"Vector size error! Could not compare OV Hits\n");
     exit(1);
   }
 
-  const int64_t dt_high = (lhs[1]<<8) + lhs[2] - (rhs[1]<<8) - rhs[2];
-  const int64_t dt_low  = (lhs[3]<<8) + lhs[4] - (rhs[3]<<8) - rhs[4];
-  const int64_t dt_16ns_high = lhs[5] - rhs[5];
-  const int64_t dt_16ns_low  = lhs[6] - rhs[6];
+  const int64_t dt_high = (lhs[1]<<8) + lhs[2] - (int64_t)((rhs[1]<<8) + rhs[2]);
+  const int64_t dt_low  = (lhs[3]<<8) + lhs[4] - (int64_t)((rhs[3]<<8) + rhs[4]);
+  const int64_t dt_16ns_high = lhs[5] - (int64_t)rhs[5];
+  const int64_t dt_16ns_low  = lhs[6] - (int64_t)rhs[6];
 
   if(dt_high != 0) return dt_high < 0; // Very different timestamps
 
