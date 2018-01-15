@@ -1,15 +1,3 @@
-#ifndef __USBstream_h__
-#define __USBstream_h__
-
-#include <USBstreamUtils.h>
-
-#include <fstream>
-#include <deque>
-#include <arpa/inet.h> // For htons, htonl
-#include <sys/stat.h>
-#include <string.h>
-#include <stdint.h>
-
 class USBstream {
 
 public:
@@ -145,5 +133,3 @@ struct OVDataPacketHeader {
   uint16_t module;
   uint32_t time16ns; // Was int64_t, but I think is always {0..0xffffffff}
 };
-
-#endif

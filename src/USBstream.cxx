@@ -1,10 +1,18 @@
-#include "USBstream-TypeDef.h"
-#include "USBstream.h"
-#include <iostream>
+#include <syslog.h>
+#include <unistd.h>
+#include <netinet/in.h>
+#include <arpa/inet.h> // For htons, htonl
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #include <fstream>
 #include <sstream>
-#include <stdlib.h>
-#include <stdint.h>
+#include <vector>
+#include <deque>
+
+#include "USBstream-TypeDef.h"
+#include "USBstream.h"
+#include "USBstreamUtils.h"
 
 USBstream::USBstream()
 {
@@ -55,7 +63,7 @@ void USBstream::Reset()
 void USBstream::SetOffset(const int module, const int off)
 {
   if(module < 0 || module >= 64){
-     fprintf(stderr, "Ignoring attempt to set offset on module %d\n", module);
+     log_msg(LOG_WARNING, "Ignoring attempt to set offset on module %d\n", module);
      return;
   }
 
@@ -84,10 +92,8 @@ void USBstream::SetBaseline(
 
 void USBstream::GetBaselineData(DataVector *vec)
 {
-  if(!vec->empty()){
-    fprintf(stderr, "Expected vec to be empty for GetBaselineData()\n");
-    exit(1);
-  }
+  if(!vec->empty())
+    log_msg(LOG_CRIT, "Expected vec to be empty for GetBaselineData()\n");
 
   for(myit = myvec.begin(); myit != myvec.end(); myit++)
     if(myit->size() > 7)
@@ -103,8 +109,8 @@ void USBstream::GetBaselineData(DataVector *vec)
 bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
 {
   if(myit == myvec.end()){
-    printf("No decoded data to send (Unix time stamp %lu) for USB %d\n",
-      mytolutc, myusb);
+    log_msg(LOG_NOTICE, "No decoded data to send (Unix time stamp %lu) "
+      "for USB %d\n", mytolutc, myusb);
     return false;
   }
 
@@ -122,8 +128,8 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
   }
 
   if(myit == myvec.end()){
-    printf("Sent decoded data up to end (Unix time stamp %lu) for USB %d\n",
-      mytolutc, myusb);
+    log_msg(LOG_NOTICE, "Sent decoded data up to end (Unix time stamp "
+      "%lu) for USB %d\n", mytolutc, myusb);
     return false;
   }
 
@@ -132,7 +138,8 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
            + ((uint64_t)(*myit)[3] <<  8)
            + ((uint64_t)(*myit)[4]      );
 
-  printf("Sent decoded data up to Unix time stamp %lu for USB %d\n", mytolutc, myusb);
+  log_msg(LOG_NOTICE, "Sent decoded data up to Unix time stamp %lu for "
+    "USB %d\n", mytolutc, myusb);
 
   myit++;
 
@@ -157,18 +164,18 @@ int USBstream::LoadFile(std::string nextfile)
       }
       myFile->close();
       delete myFile;
-      printf("USB %d has died. Exiting.\n",myusb);
+      log_msg(LOG_ERR, "USB %d has died. Exiting.\n", myusb);
       return -1;
     }
     else {
-      fprintf(stderr, "Could not open %s\n", myfilename.c_str());
+      log_msg(LOG_ERR, "Could not open %s\n", myfilename.c_str());
       delete myFile;
       return -1;
     }
   }
   else return 1;
 
-  std::cout << "Waiting for files...\n";
+  log_msg(LOG_NOTICE, "Waiting for files...\n");
   return 0;
 }
 
@@ -176,11 +183,8 @@ bool USBstream::decode()
 {
   char filedata[0xffff];//data buffer
 
-  if(!myFile->is_open()) {
-    std::cerr << "File not open! Exiting.\n";
-    exit(1);
-    return false;
-  }
+  if(!myFile->is_open())
+    log_msg(LOG_CRIT, "File not open! Exiting.\n");
 
   if(myit==myvec.end()) {
     myvec.clear();
@@ -242,8 +246,8 @@ bool USBstream::decode()
                 }
               else
                 {
-                  printf("Found corrupted data in file %s: expected %d, got %d\n",
-                         myfilename.c_str(), exp, pretype);
+                  log_msg(LOG_WARNING, "Found corrupted data in file %s: "
+                    "expected %d, got %d\n", myfilename.c_str(), exp, pretype);
                   exp = 0;
                 }
             }
@@ -427,7 +431,7 @@ void USBstream::check_data()
           data.erase(data.begin(),data.begin()+len+1); //(no longer)
         }
         else {
-          printf("Found packet parity mismatch in USB stream %d\n",myusb);
+          log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
         }
       }
     }
@@ -540,12 +544,11 @@ bool USBstream::check_debug(uint64_t d)
 
 void USBstream::flush_extra()
 {
-  if(extra) {
-    extra = false;
+  if(!extra) return;
 
-    // Ignore incomplete packets at the beginning of the run
-    if(!first_packet && mytolutc) {
-      printf("Found extra packet (?) in file %s\n",myfilename.c_str());
-    }
-  }
+  extra = false;
+
+  // Ignore incomplete packets at the beginning of the run
+  if(!first_packet && mytolutc)
+    log_msg(LOG_WARNING, "Extra packet (?) in file %s\n", myfilename.c_str());
 }

@@ -1,29 +1,39 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include <string.h>
 #include <syslog.h>
-#include <errno.h>
-#include "USBstreamUtils.h"
+#include <vector>
 
-// Print message and write to the syslog if sufficiently important
-void log_msg(int priority, const char * const format, ...)
+void log_msg(const int priority, const char * const format, ...)
 {
   va_list ap;
   va_start(ap, format);
   vprintf(format, ap);
 
+  // Always send the message to syslog, regardless of level. Syslog
+  // policy set by the machine administrator determines which priority
+  // levels actually get written to the log.  See
+  // https://www.gnu.org/software/libc/manual/html_node/Syslog.html
   va_start(ap, format);
-  if(priority == LOG_NOTICE || priority == LOG_WARNING || priority == LOG_ERR ||
-     priority == LOG_CRIT   || priority == LOG_ALERT   || priority == LOG_EMERG)
-    vsyslog(priority, format, ap);
+  vsyslog(LOG_MAKEPRI(LOG_DAEMON, priority), format, ap);
+
+  // On Linux, more severe levels are lower numbers, but nothing I've
+  // read suggests that this is standardized, so check individually.
+  if(priority == LOG_CRIT || priority == LOG_ALERT || priority == LOG_EMERG)
+    exit(1);
 }
 
-// XXX the intput vectors seem to be representing only 8-bit values
+void start_log()
+{
+  openlog("OV EBuilder", LOG_NDELAY, LOG_USER);
+  log_msg(LOG_NOTICE, "OV Event Builder Started\n");
+}
+
+// XXX the input vectors seem to be representing only 8-bit values
 bool LessThan(const std::vector<int32_t> & lhs,
               const std::vector<int32_t> & rhs, int ClockSlew)
 {
-  if( lhs.size() < 7 || rhs.size() < 7) {
+  if(lhs.size() < 7 || rhs.size() < 7) {
     log_msg(LOG_ERR,"Vector size error! Could not compare OV Hits\n");
     exit(1);
   }
@@ -43,11 +53,4 @@ bool LessThan(const std::vector<int32_t> & lhs,
   if(dt_16ns_high != 0) return dt_16ns_high < 0; // Order hi 16 bits of clock counter
 
   return dt_16ns_low < -ClockSlew; // Order lo 16 bits of clock counter
-}
-
-void start_log()
-{
-  openlog("OV EBuilder", LOG_NDELAY, LOG_USER);
-
-  log_msg(LOG_NOTICE, "OV Event Builder Started\n");
 }

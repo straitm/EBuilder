@@ -1,22 +1,30 @@
-#include "USBstream-TypeDef.h"
-#include "USBstream.h"
-#include "USBstreamUtils.h"
-
+#include <stdlib.h>
+#include <unistd.h>
 #include <stdio.h>
-#include <stdarg.h>
 #include <pthread.h>
 #include <errno.h>
 #include <syslog.h>
 #include <libgen.h>
 #include <dirent.h>
-#include <algorithm>
 #include <sys/statvfs.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <signal.h>
+#include <time.h>
+#include <netinet/in.h>
+#include <arpa/inet.h> // For htons, htonl
+#include <fstream>
+#include <string.h>
+
+#include <algorithm>
 #include <map>
+#include <deque>
+#include <vector>
+
+#include "USBstream-TypeDef.h"
+#include "USBstream.h"
+#include "USBstreamUtils.h"
 
 using std::vector;
 using std::string;
@@ -102,11 +110,9 @@ static int open_file(const char * const name)
 {
   errno = 0;
   const int fd = open(name, O_WRONLY | O_CREAT, 0644);
-  if(fd < 0){
+  if(fd < 0)
     log_msg(LOG_CRIT, "Fatal Error: failed to open file %s: %s\n",
             name, strerror(errno));
-    exit(1);
-  }
   return fd;
 }
 
@@ -209,14 +215,9 @@ static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
 static bool TryInitRun()
 {
   vector<string> files;
-  if(GetDir(InputDir, files)) {
-    if(errno) {
-      log_msg(LOG_CRIT, "Error (%s) opening directory %s\n", strerror(errno),
-              InputDir.c_str());
-      exit(1);
-    }
-    return false;
-  }
+  if(GetDir(InputDir, files) && errno)
+    log_msg(LOG_CRIT, "Error (%s) opening directory %s\n", strerror(errno),
+            InputDir.c_str());
 
   OV_EB_State = initial_delay = (int)(latency*files.size()/numUSB/20);
 
@@ -230,12 +231,10 @@ static void InitRun()
   const time_t oldtime = time(0);
 
   while(!TryInitRun()) {
-    if((int)difftime(time(0), oldtime) > MAXTIME) {
-      log_msg(LOG_CRIT, "Error: No input files found in last %d seconds.\n",
-        MAXTIME);
-      exit(127);
-    }
-    else sleep(1);
+    if((int)difftime(time(0), oldtime) > MAXTIME)
+      log_msg(LOG_CRIT, "No input files found for %d seconds.\n", MAXTIME);
+    else
+      sleep(1);
   }
 }
 
@@ -243,10 +242,8 @@ static void InitRun()
 // Returns true if this happens, and false otherwise.
 static bool OpenNextFileSet()
 {
-  if(check_disk_space(InputDir) < 0) { // Why are we checking the *input* directory?
+  if(check_disk_space(InputDir) < 0) // Why are we checking the *input* directory?
     log_msg(LOG_CRIT, "Fatal error in check_disk_space(%s)\n", InputDir.c_str());
-    return false;
-  }
 
   vector<string> files;
   if(GetDir(InputDir, files)) return false;
@@ -315,11 +312,9 @@ static bool OpenNextFileSet()
 static void BuildEvent(const DataVector & in_packets,
                        const vector<int32_t> & OutIndex, const int fd)
 {
-  if(fd <= 0) {
+  if(fd <= 0)
     log_msg(LOG_CRIT, "Fatal Error in BuildEvent(). Invalid file "
       "handle for previously opened data file!\n");
-    exit(1);
-  }
 
   if(in_packets.empty()){
     log_msg(LOG_WARNING, "Got empty data in BuildEvent(). Trying to continue.\n");
@@ -333,19 +328,15 @@ static void BuildEvent(const DataVector & in_packets,
   evheader.time_sec = time_s;
   evheader.n_ov_data_packets = in_packets.size();
 
-  if(!evheader.writeout(fd)){
+  if(!evheader.writeout(fd))
     log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
-    exit(1);
-  }
 
   for(unsigned int packeti = 0; packeti < in_packets.size(); packeti++){
     const std::vector<int32_t> & packet = in_packets[packeti];
 
-    if(packet.size() < 7) {
+    if(packet.size() < 7)
       log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < 7\n",
          (unsigned int) packet.size());
-      exit(1);
-    }
 
     const int module_local = (packet.at(0) >> 8) & 0x7f;
     // EBuilder temporary internal mapping is decoded back to pmtboard_u
@@ -360,9 +351,9 @@ static void BuildEvent(const DataVector & in_packets,
     const int32_t time_16ns_lo = packet.at(6);
     const uint32_t time_16ns= (time_16ns_hi << 16)+time_16ns_lo;
 
-    if(type != kOVR_ADC) {
-      log_msg(LOG_CRIT, "Got non-ADC packet, type %d. Not supported!\n", type);
-      exit(1);
+    if(type != kOVR_ADC){
+      log_msg(LOG_ERR, "Got non-ADC packet, type %d. Not supported!\n", type);
+      continue;
     }
 
     // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
@@ -394,20 +385,16 @@ static void BuildEvent(const DataVector & in_packets,
     moduleheader.module = module;
     moduleheader.time16ns = time_16ns;
 
-    if(!moduleheader.writeout(fd)){
+    if(!moduleheader.writeout(fd))
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header!\n");
-      exit(1);
-    }
 
     for(int m = 0; m < moduleheader.nHits; m++) {
       OVHitData hit;
       hit.channel = packet.at(8+2*m);
       hit.charge = packet.at(7+2*m);
 
-      if(!hit.writeout(fd)){
+      if(!hit.writeout(fd))
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
-        exit(1);
-      }
     }
   }
 }
@@ -506,21 +493,18 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
 
     if(type != kOVR_ADC) continue;
 
-    if(module > maxModules){
+    if(module > maxModules)
       log_msg(LOG_CRIT, "Fatal Error: Module number requested "
         "(%d) out of range (0-%d) in calculate pedestal\n", module, maxModules);
-      exit(1);
-    }
 
     for(int i = 7; i+1 < (int)BaselineDataIt->size(); i += 2) {
       const int charge = BaselineDataIt->at(i);
       const int channel = BaselineDataIt->at(i+1); // Channels run 0-63
-      if(channel >= numChannels){
+      if(channel >= numChannels)
         log_msg(LOG_CRIT, "Fatal Error: Channel number requested "
           "(%d) out of range (0-%d) in calculate pedestal\n",
           channel, numChannels-1);
-        exit(1);
-      }
+
       // Should these be modified to better handle large numbers of baseline
       // triggers?
       baseline[module][channel] = (baseline[module][channel]*
@@ -559,7 +543,7 @@ static bool GetBaselines()
     }
   }
 
-  printf("Processing baselines...\n");
+  log_msg(LOG_INFO, "Processing baselines...\n");
 
   // Set USB numbers for each OVUSBStream and load baseline files
   for(unsigned int i = 0; i < numUSB; i++) {
@@ -595,23 +579,11 @@ static void LoadBaselineData()
 {
   const time_t oldtime = time(0);
   while(!GetBaselines()){
-    if((int)difftime(time(0), oldtime) > MAXTIME) {
-      log_msg(LOG_CRIT, "Error: Baseline data not found in last %d seconds.\n",
-        MAXTIME);
-      exit(127);
-    }
+    if((int)difftime(time(0), oldtime) > MAXTIME)
+      log_msg(LOG_CRIT, "Baseline data not found for %d seconds.\n", MAXTIME);
     sleep(2);
   }
 }
-
-static void die_with_log(const char * const format, ...)
-{
-  va_list ap;
-  va_start(ap, format);
-  log_msg(LOG_CRIT, format, ap);
-  exit(127);
-}
-
 
 // Return a vector of {USB serial numbers, board numbers, pmtboard_u, time offsets}
 // for all USBs in the given table.  Sets no globals.
@@ -619,7 +591,7 @@ static vector<usb_sbop> get_sbops(const char * configfilename)
 {
   vector<usb_sbop> sbops;
   FILE * configfile = fopen(configfilename, "r");
-  if(configfile == NULL) die_with_log("Could not read config file\n");
+  if(configfile == NULL) log_msg(LOG_CRIT, "Could not read config file\n");
 
   char * line = NULL;
   size_t len = 0;
@@ -627,7 +599,7 @@ static vector<usb_sbop> get_sbops(const char * configfilename)
     if(len < 2 || line[0] == '#') continue;
     int serial, board, pmtboard, offset;
     if(4 != sscanf(line, "%d %d %d %d", &serial, &board, &pmtboard, &offset))
-      die_with_log("Invalid line in config file: %s\n", line);
+      log_msg(LOG_CRIT, "Invalid line in config file: %s\n", line);
     sbops.push_back(usb_sbop(serial, board, pmtboard, offset));
   }
   fclose(configfile);
@@ -666,8 +638,8 @@ static void setup_from_config(const string & configfile)
 
   for(unsigned int i = 0; i < sbops.size(); i++) {
     if(sbops[i].board >= maxModules)
-      die_with_log("Error: config references module %d, but max is %d.\n",
-                   sbops[i].board, maxModules-1);
+      log_msg(LOG_CRIT, "Error: config references module %d, but max is %d.\n",
+              sbops[i].board, maxModules-1);
 
     // Set offsets, clumsily dealing with the indexing of OVUSBStream
     OVUSBStream[
@@ -881,7 +853,7 @@ static void read_in_for_subrun(vector<DataVector> & CurrentData)
     if(!HandleOpenNextFileSet()) return;
 
     // Move the data from the files into USBStream objects
-    printf("Decoding file set #%d for this run\n", nfilesets);
+    log_msg(LOG_INFO, "Decoding file set #%d for this run\n", nfilesets);
     DecodeFileSet();
 
     rename_files_we_have_read();
