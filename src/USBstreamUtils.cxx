@@ -6,38 +6,6 @@
 #include <errno.h>
 #include "USBstreamUtils.h"
 
-char* config_string(const char* path, const char* key)
-{
-  FILE * file = fopen(path,"r");
-  if (file == NULL) {
-    printf("Unable to open file %s\n",path);
-    exit(1);
-  }
-
-  char ch[300];
-  while(fgets(ch, 120, file) != NULL){
-    char name[200];
-    static char IP[200];
-    static char port[200];
-    if (sscanf(ch, "%s :%s", name, IP) == 2) { // get IP/hostname
-      if(strcmp(name, key) == 0){
-        fclose(file);
-        return IP;
-      }
-    }
-    else if (sscanf(ch, "%s %s", name, port) == 2){ // get port number
-      if ( strcmp(name, key) == 0 ) {
-        fclose(file);
-        return port;
-      }
-    }
-
-  }
-  fclose(file);
-
-  return NULL;
-}
-
 // Print message and write to the syslog if sufficiently important
 void log_msg(int priority, const char * const format, ...)
 {
