@@ -192,7 +192,7 @@ void USBstream::decode()
   unsigned int bytestoread = 0;
 
   uint32_t word = 0; // holds 24-bit word being built, must be unsigned
-  char exp = 0;        // expecting this type next
+  char expcounter = 0; // expecting this counter next
 
   do{
     bytestoread = std::min(BUFSIZE, bytesleft);
@@ -200,17 +200,31 @@ void USBstream::decode()
 
     myFile->read(filedata, bytestoread);
 
+    /*
+      Undocumented input file format is revealed by inspection to be
+      constructed like this:
+
+      0                   1                   2                   3
+      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     |0 0|     A     |0 1|      B    |1 0|     C     |1 1|     D     |
+     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+     Where the bits of A, B, C, and D concatenated make the 24-bit words
+     described in Matt Toups' thesis.
+   */
+
     for(unsigned int bytedex = 0; bytedex < bytestoread; bytedex++){
+      const char counter = (filedata[bytedex] >> 6) & 3;
       const char payload = filedata[bytedex] & 0x3f;
-      const char pretype = (filedata[bytedex] >> 6) & 3;
-      if(pretype == 0){ //not handling type very well.
-        exp = 1;
+      if(counter == 0){
+        expcounter = 1;
         word = payload;
       }
-      else if(pretype == exp){
+      else if(counter == expcounter){
         word = (word << 6) | payload;
-        if(++exp == 4){
-          exp = 0;
+        if(++expcounter == 4){
+          expcounter = 0;
 
           if(got_word(word)) { //24-bit word stored, process it
             sortedpackets.clear();
@@ -223,15 +237,11 @@ void USBstream::decode()
       }
       else{
         log_msg(LOG_WARNING, "Found corrupted data in file %s: "
-          "expected %d, got %d\n", myfilename.c_str(), exp, pretype);
-        exp = 0;
+          "expected %d, got %d\n", myfilename.c_str(), expcounter, counter);
+        expcounter = 0;
       }
     }
   }while(bytestoread != bytesleft);
-
-  //extra.push_back(data); // Uncommenting these lines assumes OVDAQ only
-                           // writes complete packets to disk at start/end of files
-  //flush_extra();         // For now this is not true
 
   if(myFile->is_open()) myFile->close();
   delete myFile;
@@ -245,10 +255,11 @@ bool USBstream::got_word(uint32_t d)
 {
   words++;
   char type = (d >> 22) & 3;
-  if(type == 1)
-    { // command word, not data
-      flush_extra();
-    }
+  if(type == 1) {
+    // Old comment here said "command word, not data". Apparently there
+    // are 24 bit words undocumented in Matt Toups' thesis that start
+    // with 01b instead of 11b, but we just ignore them.
+  }
   else if(type == 3)
     {
       if(check_debug(d))
@@ -360,8 +371,7 @@ void USBstream::check_data()
         log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
 
       got_packet = true;
-      flush_extra();
-      if(first_packet) { first_packet = false; }
+      if(first_packet) first_packet = false;
 
       // This block builds muon events
       bool MuonEvent = false;
@@ -419,11 +429,8 @@ void USBstream::check_data()
       //delete the data that we've decoded into 'packet'
       data.erase(data.begin(), data.begin()+len+1);
     }
-    if(!got_packet)
-    {
-      extra = true;
-      data.pop_front();
-    }
+
+    if(!got_packet) data.pop_front();
   }
 }
 
@@ -462,7 +469,6 @@ bool USBstream::check_debug(uint32_t wordin)
     if(got_hi) {
       unix_time_lo = payload;
       got_hi = false;
-      flush_extra();
 
       // Check to see if first time stamp found and if so, rewind file
       // (This cryptic line tagged: beltshortcrimefight)
@@ -495,7 +501,6 @@ bool USBstream::check_debug(uint32_t wordin)
       int32_t v = (word_count[2] << 16) + word_count[3];
       int32_t diff = t - v - words;
       if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
-      flush_extra();
     }
     return 1;
   }
@@ -503,27 +508,14 @@ bool USBstream::check_debug(uint32_t wordin)
   // Not explained in Toups thesis.  Top of function says "dac pmt"
   // which isn't much to go on.
   else if(control == 0xc1) {
-    flush_extra();
     return 1;
   }
 
   // Not explained in Toups thesis.  Top of function says "dac"...
   else if(control == 0xc2) {
-    flush_extra();
     return 1;
   }
   else{
     return 0;
   }
-}
-
-void USBstream::flush_extra()
-{
-  if(!extra) return;
-
-  extra = false;
-
-  // Ignore incomplete packets at the beginning of the run
-  if(!first_packet && mytolutc)
-    log_msg(LOG_WARNING, "Extra packet (?) in file %s\n", myfilename.c_str());
 }

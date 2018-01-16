@@ -51,7 +51,6 @@ private:
   bool got_word(uint32_t d);
   void check_data();
   bool check_debug(uint32_t d);
-  void flush_extra();
 
   // These variables are for the decoding
   int32_t words;
