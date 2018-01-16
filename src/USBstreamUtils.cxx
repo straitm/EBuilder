@@ -33,19 +33,16 @@ void start_log()
 bool LessThan(const std::vector<uint16_t> & lhs,
               const std::vector<uint16_t> & rhs, const int ClockSlew)
 {
-  if(lhs.size() < 7 || rhs.size() < 7) {
-    log_msg(LOG_ERR,"Vector size error! Could not compare OV Hits\n");
-    exit(1);
-  }
+  if(lhs.size() < 7 || rhs.size() < 7)
+    log_msg(LOG_CRIT, "Vector size error! Could not compare OV Hits\n");
 
-  const int64_t dt_high = (lhs[1]<<8) + lhs[2] - (int64_t)((rhs[1]<<8) + rhs[2]);
-  const int64_t dt_low  = (lhs[3]<<8) + lhs[4] - (int64_t)((rhs[3]<<8) + rhs[4]);
-  const int64_t dt_16ns_high = lhs[5] - (int64_t)rhs[5];
-  const int64_t dt_16ns_low  = lhs[6] - (int64_t)rhs[6];
+  const int64_t dt_unix_hi = (int64_t)lhs[1] - rhs[1],
+                dt_unix_lo = (int64_t)rhs[2] - rhs[2];
+  const int64_t dt_16ns_high = (int64_t)lhs[3] - rhs[3];
+  const int64_t dt_16ns_low  = (int64_t)lhs[4] - rhs[4];
 
-  if(dt_high != 0) return dt_high < 0; // Very different timestamps
-
-  if(labs(dt_low) > 1) return dt_low < 0; // Timestamps are not adjacent
+  if(dt_unix_hi != 0) return dt_unix_hi < 0; // Very different timestamps
+  if(labs(dt_unix_lo) > 1) return dt_unix_lo < 0; // Timestamps are not adjacent
 
   // Was sync pulse 2sec (sqrd)
   if(labs(dt_16ns_high) > 2000) return dt_16ns_high > 0;

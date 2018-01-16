@@ -58,10 +58,8 @@ private:
   bool got_hi;
   bool restart;
   bool first_packet;
-  uint16_t time_hi_1;
-  uint16_t time_hi_2;
-  uint16_t time_lo_1;
-  uint16_t time_lo_2;
+  uint16_t unix_time_hi;
+  uint16_t unix_time_lo;
 
   std::deque<uint16_t> data;
 

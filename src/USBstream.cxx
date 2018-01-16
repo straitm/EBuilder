@@ -22,16 +22,14 @@ USBstream::USBstream()
   got_hi = false;
   restart = false;
   first_packet = false;
-  time_hi_1 = 0;
-  time_hi_2 = 0;
-  time_lo_1 = 0;
-  time_lo_2 = 0;
+  unix_time_hi = 0;
+  unix_time_lo = 0;
   word_index = 0;
   word_count[0] = 0;
   word_count[1] = 0;
   word_count[2] = 0;
   word_count[3] = 0;
-  myvec.reserve(0xffff);
+  myvec.reserve(0x10000);
   myit=myvec.begin();
   BothLayerThresh = false;
   UseThresh = false;
@@ -91,11 +89,10 @@ void USBstream::GetBaselineData(DataVector *vec)
     log_msg(LOG_CRIT, "Expected vec to be empty for GetBaselineData()\n");
 
   for(myit = myvec.begin(); myit != myvec.end(); myit++)
-    if(myit->size() > 7)
+    if(myit->size() > /* >= ? */ MIN_ADC_PACKET_SIZE)
       vec->push_back(*myit);
 
-  time_hi_1 = time_hi_2 = 0;
-  time_lo_1 = time_lo_2 = 0;
+  unix_time_hi = unix_time_lo = 0;
 }
 
 // Empirically, returns true if it finds a *Unix* time stamp past the location
@@ -114,10 +111,8 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
 
     if(myit->size() <= 4) continue;
 
-    const uint64_t new_time = ((uint64_t)(*myit)[1] << 24)
-                            + ((uint64_t)(*myit)[2] << 16)
-                            + ((uint64_t)(*myit)[3] <<  8)
-                            + ((uint64_t)(*myit)[4]      );
+    const uint64_t new_time = ((uint64_t)(*myit)[1] << 16)
+                            + ((uint64_t)(*myit)[2]      );
 
     if(new_time > mytolutc) break;
   }
@@ -128,10 +123,8 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
     return false;
   }
 
-  mytolutc = ((uint64_t)(*myit)[1] << 24)
-           + ((uint64_t)(*myit)[2] << 16)
-           + ((uint64_t)(*myit)[3] <<  8)
-           + ((uint64_t)(*myit)[4]      );
+  mytolutc = ((uint64_t)(*myit)[1] << 16)
+           + ((uint64_t)(*myit)[2]      );
 
   log_msg(LOG_NOTICE, "Sent decoded data up to Unix time stamp %lu for "
     "USB %d\n", mytolutc, myusb);
@@ -276,6 +269,21 @@ void USBstream::check_data()
   // first word and try to decode again.
   while(1)
   {
+    // ADC packet word indices.  As per Toups thesis:
+    //
+    // 0xffff                         | Header word
+    // 1, mod#[7 bits], wdcnt[8 bits] | Data type, module #, word count
+    // time                           | High 16 bits of 62.5 MHz clock counter
+    // time                           | Low  16 bits of 62.5 MHz clock counter
+    // adc                            | ADC ...
+    // channel                        | ... and channel number, repeated N times
+    // parity                         | Parity
+    enum ADC_WINX { ADC_WIDX_HEAD   = 0,
+                    ADC_WIDX_MODLEN = 1,
+                    ADC_WIDX_CLKHI  = 2,
+                    ADC_WIDX_CLKLO  = 3,
+                    ADC_WIDX_HIT    = 4 };
+
     bool got_packet = false;
 
     if(data.empty()) break;
@@ -285,135 +293,134 @@ void USBstream::check_data()
       if(data.size() < 2) break;
 
       unsigned int len = data[1] & 0xff;
-      if(len > 1)
-      {
+      if(len > 1) {
         if(data.size() < len + 1) break;
 
         unsigned int parity = 0;
-        int8_t module = (data[1] >> 8) & 0x7f;
-        int8_t type = data[1] >> 15; // check to see if trigger packets
+        uint8_t module = (data[1] >> 8) & 0x7f;
+        uint8_t type = data[1] >> 15; // check to see if trigger packets
         std::vector<uint16_t> packet;
         bool hitarray1[64] = {0};
         bool hitarray2[64] = {0};
 
-        for(unsigned int m = 1; m <= len; m++)
-        {
-          parity ^= data[m];
-          if(m<len) {
-            if(m<4) {
-              if(m==3) {
-                if(module >= 0 && module <= 63) {
-                  int low = (data[m] & 0xffff) - offset[module];
-                  if(low < 0) {
-                    int high = packet.back() - 1;
-                    if(high < 0) { high += (1 << 13); } // sync packets come every 2^29 clock counts
-                    packet.pop_back(); packet.push_back(high);
-                    low += (1 << 16);
-                    packet.push_back(low);
-                  }
-                  else { packet.push_back(low); }
-                }
-                else { packet.push_back(data[m]); }
+        for(unsigned int wordi = ADC_WIDX_MODLEN; wordi < len; wordi++){
+          parity ^= data[wordi];
+
+          if(wordi == ADC_WIDX_CLKLO) {
+            if(module <= 63) {
+              const int low = (int)data[wordi] - offset[module];
+              if(low < 0) {
+                const int high = (int)packet.back() - 1;
+
+                // sync packets come every 2^29 clock counts
+                const int highcorr = high < 0? high + (1 << 13): high;
+
+                packet.pop_back();
+                packet.push_back(highcorr);
+                packet.push_back(low + (1 << 16));
               }
-              else{
-                packet.push_back(data[m]);
+              else {
+                packet.push_back(low);
               }
             }
             else {
-              if(type) {
-                if(m%2==0) { // ADC charge
-                  if(data[m+1] < 64 && module < 64) {
-                    // Baseline subtraction can make ADC negative.  Use signed
-                    // value here, but do not modify the value in packet. This
-                    // is done when writing out.
-                    const int adc = data[m] - baseline[module][data[m+1]];
-                    if(adc > mythresh) hitarray2[data[m+1]] = true;
-
-                    packet.push_back(data[m]);
-                    packet.push_back(data[m+1]);
-                    hitarray1[data[m+1]] = true;
-                  }
-                }
-              }
-              else { packet.push_back(data[m]); }
+              log_msg(LOG_ERR, "Invalid module number %u\n", module);
+              packet.push_back(data[wordi]);
             }
           }
-          if(m==1) {
-            packet.push_back(time_hi_1);
-            packet.push_back(time_hi_2);
-            packet.push_back(time_lo_1);
-            packet.push_back(time_lo_2);
+          else if(wordi < ADC_WIDX_HIT) {
+            packet.push_back(data[wordi]);
+          }
+          else { // we are in the words that give the hit info
+            if(type) {
+              if(wordi%2 == 0) { // ADC charge
+                if(data[wordi+1] < 64 && module < 64) {
+                  // Baseline subtraction can make ADC negative.  Use signed
+                  // value here, but do not modify the value in packet. This
+                  // is done when writing out.
+                  const int adc = data[wordi] - baseline[module][data[wordi+1]];
+                  if(adc > mythresh) hitarray2[data[wordi+1]] = true;
+
+                  packet.push_back(data[wordi]);
+                  packet.push_back(data[wordi+1]);
+                  hitarray1[data[wordi+1]] = true;
+                }
+              }
+            }
+            else { packet.push_back(data[wordi]); }
+          }
+
+          if(wordi == ADC_WIDX_MODLEN) {
+            packet.push_back(unix_time_hi);
+            packet.push_back(unix_time_lo);
           }
         }
 
-        if(!parity)
-        { // check parity
-          got_packet = true;
-          flush_extra();
-          if(first_packet) { first_packet = false; }
+        if(parity != data[len])
+          log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
 
-          // This block builds muon events
-          bool MuonEvent = false;
-          if(UseThresh && type) {
-            if(BothLayerThresh) {
-              for(int i = 0; i<32; i++) {
-                if( hitarray2[i]) {
-                  if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
-                    MuonEvent = true;
-                    break;
-                  }
-                }
-              }
-            }
-            else {
-              for(int i = 0; i<32; i++) {
-                if(hitarray1[i]) {
-                  if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
-                    MuonEvent = true;
-                    break;
-                  }
-                }
-                if(hitarray2[i]) {
-                  if( hitarray1[adj1[i]] || hitarray1[adj2[i]] ){
-                    MuonEvent = true;
-                    break;
-                  }
+        got_packet = true;
+        flush_extra();
+        if(first_packet) { first_packet = false; }
+
+        // This block builds muon events
+        bool MuonEvent = false;
+        if(UseThresh && type) {
+          if(BothLayerThresh) {
+            for(int i = 0; i<32; i++) {
+              if( hitarray2[i]) {
+                if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
+                  MuonEvent = true;
+                  break;
                 }
               }
             }
           }
           else {
-            MuonEvent = true;
-          }
-
-          if(packet.size() > 7) { // guarantees at least 1 hit (size > 9 for 2 hits)
-            if(MuonEvent) { // Mu-like double found for this event
-              if( myvec.size() > 0 ) {
-                DataVector::iterator InsertionSortIt = myvec.end();
-                bool found = false;
-                while(--InsertionSortIt >= myvec.begin()) {
-                  if(!LessThan(packet, *InsertionSortIt, 0)) {
-                    myvec.insert(InsertionSortIt+1, packet);
-                    found = true;
-                    break;
-                  }
+            for(int i = 0; i<32; i++) {
+              if(hitarray1[i]) {
+                if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
+                  MuonEvent = true;
+                  break;
                 }
-
-                // Reached beginning of myvec
-                if(!found)
-                  myvec.insert(myvec.begin(), packet);
               }
-              else {
-                myvec.push_back(packet);
+              if(hitarray2[i]) {
+                if( hitarray1[adj1[i]] || hitarray1[adj2[i]] ){
+                  MuonEvent = true;
+                  break;
+                }
               }
             }
           }
-          //delete first few elements of data
-          data.erase(data.begin(),data.begin()+len+1); //(no longer)
         }
         else {
-          log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
+          MuonEvent = true;
         }
+
+        if(packet.size() > MIN_ADC_PACKET_SIZE) {
+          if(MuonEvent) { // Mu-like double found for this event
+            if( myvec.size() > 0 ) {
+              DataVector::iterator InsertionSortIt = myvec.end();
+              bool found = false;
+              while(--InsertionSortIt >= myvec.begin()) {
+                if(!LessThan(packet, *InsertionSortIt, 0)) {
+                  myvec.insert(InsertionSortIt+1, packet);
+                  found = true;
+                  break;
+                }
+              }
+
+              // Reached beginning of myvec
+              if(!found)
+                myvec.insert(myvec.begin(), packet);
+            }
+            else {
+              myvec.push_back(packet);
+            }
+          }
+        }
+        //delete first few elements of data
+        data.erase(data.begin(),data.begin()+len+1); //(no longer)
       }
     }
     if(!got_packet)
@@ -441,50 +448,43 @@ void USBstream::check_data()
 
   These refer to the control bytes of DAQ packets.
 */
-bool USBstream::check_debug(uint64_t d)
+bool USBstream::check_debug(uint64_t wordin)
 {
-  uint16_t a = (d >> 16) & 0xff;
-  d = d & 0xffff;
+  uint8_t control = (wordin >> 16) & 0xff;
+  uint16_t payload = wordin & 0xffff;
 
   // Unix-timestamp-high-bits packet - see appendix B.2 of Matt
   // Toups' thesis.
-  if(a == 0xc8)
-    {
-      time_hi_1 = (d >> 8) & 0xff;
-      time_hi_2 = d & 0xff;
-      got_hi = true;
-      return 1;
-    }
+  if(control == 0xc8) {
+    unix_time_hi = payload;
+    got_hi = true;
+    return 1;
+  }
 
   // Unix-timestamp-low-bits packet - B.2 of Toups thesis
-  else if(a == 0xc9)
-    {
-      if(got_hi)
-        {
-          time_lo_1 = (d >> 8) & 0xff;
-          time_lo_2 = d & 0xff;
-          got_hi = false;
-          flush_extra();
+  else if(control == 0xc9) {
+    if(got_hi) {
+      unix_time_lo = payload;
+      got_hi = false;
+      flush_extra();
 
-          // Check to see if first time stamp found and if so, rewind file
-          // (This cryptic line tagged: beltshortcrimefight)
-          if(!mytolutc) {
-            mytolutc = (time_hi_1 << 8) + time_hi_2;
-            mytolutc = (mytolutc << 16) + (time_lo_1 << 8) + time_lo_2;
-            restart = true;
-            first_packet = true;
-          }
-        }
-      return 1;
+      // Check to see if first time stamp found and if so, rewind file
+      // (This cryptic line tagged: beltshortcrimefight)
+      if(!mytolutc) {
+        mytolutc = ((uint32_t)unix_time_hi << 16) + unix_time_lo;
+        restart = true;
+        first_packet = true;
+      }
     }
+    return 1;
+  }
 
   // XXX undocumented packet type - only clue is "skipped" in the comment
   // at the top of this function.
-  else if(a == 0xc5)
-    {
-      word_index = 0;
-      return 1;
-    }
+  else if(control == 0xc5) {
+    word_index = 0;
+    return 1;
+  }
 
   // Not explained in Toups thesis.  Top of function says
   //    c6 data_hi    - number of received data words
@@ -492,36 +492,33 @@ bool USBstream::check_debug(uint64_t d)
   //    c6 lost_hi     - number of lost data words
   //    c6 lost_lo
   // which could be more helpful.
-  else if(a == 0xc6)
-    {
-      word_count[word_index++] = d;
-      if(word_index == 4)
-        {
-          int64_t t = (word_count[0] << 16) + word_count[1];
-          int64_t v = (word_count[2] << 16) + word_count[3];
-          int64_t diff = t - v - words;
-          if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
-          flush_extra();
-        }
-      return 1;
+  else if(control == 0xc6) {
+    word_count[word_index++] = payload;
+    if(word_index == 4) {
+      int64_t t = (word_count[0] << 16) + word_count[1];
+      int64_t v = (word_count[2] << 16) + word_count[3];
+      int64_t diff = t - v - words;
+      if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
+      flush_extra();
     }
+    return 1;
+  }
 
   // Not explained in Toups thesis.  Top of function says "dac pmt"
   // which isn't much to go on.
-  else if(a == 0xc1)
-    {
-      flush_extra();
-      return 1;
-    }
+  else if(control == 0xc1) {
+    flush_extra();
+    return 1;
+  }
 
   // Not explained in Toups thesis.  Top of function says "dac"...
-  else if(a == 0xc2)
-    {
-      flush_extra();
-      return 1;
-    }
-  else
+  else if(control == 0xc2) {
+    flush_extra();
+    return 1;
+  }
+  else{
     return 0;
+  }
 }
 
 void USBstream::flush_extra()

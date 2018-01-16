@@ -334,10 +334,8 @@ static void BuildEvent(const DataVector & in_packets,
   const std::vector<uint16_t> & firstpacket = in_packets[0];
 
   OVEventHeader evheader;
-  evheader.time_sec = ((uint32_t)firstpacket.at(1) << 24)
-                    + ((uint32_t)firstpacket.at(2) << 16)
-                    + ((uint32_t)firstpacket.at(3) <<  8)
-                    +  (uint32_t)firstpacket.at(4);
+  evheader.time_sec = ((uint32_t)firstpacket.at(1) << 16)
+                    +  (uint32_t)firstpacket.at(2);
   evheader.n_ov_data_packets = in_packets.size();
 
   if(!evheader.writeout(fd))
@@ -346,9 +344,9 @@ static void BuildEvent(const DataVector & in_packets,
   for(unsigned int packeti = 0; packeti < in_packets.size(); packeti++){
     const std::vector<uint16_t> & packet = in_packets[packeti];
 
-    if(packet.size() < 7)
-      log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < 7\n",
-         (unsigned int) packet.size());
+    if(packet.size() < MIN_ADC_PACKET_SIZE - 2)
+      log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < %u\n",
+         (unsigned int) packet.size(), MIN_ADC_PACKET_SIZE);
 
     const int module_local = (packet.at(0) >> 8) & 0x7f;
     // EBuilder temporary internal mapping is decoded back to pmtboard_u
@@ -359,8 +357,8 @@ static void BuildEvent(const DataVector & in_packets,
 
     const int16_t module = PMTUniqueMap[std::pair<int, int>(usb, module_local)];
     const int8_t type = packet.at(0) >> 15;
-    const uint16_t time_16ns_hi = packet.at(5);
-    const uint16_t time_16ns_lo = packet.at(6);
+    const uint16_t time_16ns_hi = packet.at(3);
+    const uint16_t time_16ns_lo = packet.at(4);
     const uint32_t time_16ns= ((uint32_t)time_16ns_hi << 16)+time_16ns_lo;
 
     if(type != kOVR_ADC){
@@ -391,9 +389,8 @@ static void BuildEvent(const DataVector & in_packets,
     }
 
     OVDataPacketHeader moduleheader;
-    // XXX Magic here.  What is 7?  Why divide by 2?  Also it's a little
-    // scary that length overflows at 128. Had we better check for that?
-    moduleheader.nHits = (packet.size()-7)/2;
+    // Hits are two words each
+    moduleheader.nHits = (packet.size()-(MIN_ADC_PACKET_SIZE-2))/2;
     moduleheader.module = module;
     moduleheader.time16ns = time_16ns;
 
@@ -402,13 +399,13 @@ static void BuildEvent(const DataVector & in_packets,
 
     for(int m = 0; m < moduleheader.nHits; m++) {
       OVHitData hit;
-      hit.channel = packet.at(8+2*m);
-
       // Baseline substraction happens here, not in decode()
-      hit.charge = packet.at(7+2*m)
+      hit.charge = packet.at(5+2*m)
                    - baselines[usbserial_to_usbindex[usb]]
                               [module_local]
                               [hit.channel];
+
+      hit.channel = packet.at(6+2*m);
 
       if(!hit.writeout(fd))
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
@@ -501,9 +498,9 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
       BaselineDataIt != BaselineData.end();
       BaselineDataIt++) {
 
-    // Data Packets should have 7 + 2*num_hits elements
-    if(BaselineDataIt->size() < 8 && BaselineDataIt->size() % 2 != 1)
-      log_msg(LOG_ERR, "Fatal Error: Baseline data packet found with no data\n");
+    if(BaselineDataIt->size() < MIN_ADC_PACKET_SIZE ||
+       BaselineDataIt->size() % 2 != MIN_ADC_PACKET_SIZE % 2)
+      log_msg(LOG_CRIT, "Corrupted baseline data packet found\n");
 
     const int module = (BaselineDataIt->at(0) >> 8) & 0x7f;
     const int type = BaselineDataIt->at(0) >> 15;
@@ -514,7 +511,7 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
       log_msg(LOG_CRIT, "Fatal Error: Module number requested "
         "(%d) out of range (0-%d) in calculate pedestal\n", module, maxModules);
 
-    for(int i = 7; i+1 < (int)BaselineDataIt->size(); i += 2) {
+    for(int i = 5 /* const here would be nice */; i+1 < (int)BaselineDataIt->size(); i += 2) {
       const int charge = BaselineDataIt->at(i);
       const int channel = BaselineDataIt->at(i+1); // Channels run 0-63
       if(channel >= numChannels)
