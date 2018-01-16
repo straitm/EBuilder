@@ -70,7 +70,6 @@ void USBstream::SetThresh(int thresh, int threshtype)
     mythresh=thresh;
   else
     mythresh = -20; // Put SW threshold well below HW threshold (including spread)
-
 }
 
 void USBstream::SetBaseline(
@@ -113,8 +112,8 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
 
     if(sortedpacketsptr->size() <= 2) continue;
 
-    const uint64_t new_time = ((uint64_t)(*sortedpacketsptr)[1] << 16)
-                            + ((uint64_t)(*sortedpacketsptr)[2]      );
+    const uint32_t new_time = ((uint32_t)(*sortedpacketsptr)[1] << 16)
+                            + ((uint32_t)(*sortedpacketsptr)[2]      );
 
     if(new_time > mytolutc) break;
   }
@@ -125,8 +124,8 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
     return false;
   }
 
-  mytolutc = ((uint64_t)(*sortedpacketsptr)[1] << 16)
-           + ((uint64_t)(*sortedpacketsptr)[2]      );
+  mytolutc = ((uint32_t)(*sortedpacketsptr)[1] << 16)
+           + ((uint32_t)(*sortedpacketsptr)[2]      );
 
   log_msg(LOG_NOTICE, "Sent decoded data up to Unix time stamp %lu for "
     "USB %d\n", mytolutc, myusb);
@@ -192,7 +191,7 @@ void USBstream::decode()
   unsigned int bytesleft = fileinfo.st_size;
   unsigned int bytestoread = 0;
 
-  uint64_t word = 0; // holds 24-bit word being built, must be unsigned
+  uint32_t word = 0; // holds 24-bit word being built, must be unsigned
   char exp = 0;        // expecting this type next
 
   do{
@@ -242,7 +241,7 @@ void USBstream::decode()
 }
 
 /* This would be better named "process_word()" */
-bool USBstream::got_word(uint64_t d)
+bool USBstream::got_word(uint32_t d)
 {
   words++;
   char type = (d >> 22) & 3;
@@ -265,7 +264,6 @@ bool USBstream::got_word(uint64_t d)
  * checking.  It is decoding. */
 void USBstream::check_data()
 {
-
   // Try to decode the data in 'data'. Stop trying if 'data' is empty, or
   // if it starts out right with 0xffff but has nothing else, or if it is
   // shorter than the length it claims to have.  But otherwise, drop the
@@ -446,7 +444,7 @@ void USBstream::check_data()
 
   These refer to the control bytes of DAQ packets.
 */
-bool USBstream::check_debug(uint64_t wordin)
+bool USBstream::check_debug(uint32_t wordin)
 {
   uint8_t control = (wordin >> 16) & 0xff;
   uint16_t payload = wordin & 0xffff;
@@ -493,9 +491,9 @@ bool USBstream::check_debug(uint64_t wordin)
   else if(control == 0xc6) {
     word_count[word_index++] = payload;
     if(word_index == 4) {
-      int64_t t = (word_count[0] << 16) + word_count[1];
-      int64_t v = (word_count[2] << 16) + word_count[3];
-      int64_t diff = t - v - words;
+      int32_t t = (word_count[0] << 16) + word_count[1];
+      int32_t v = (word_count[2] << 16) + word_count[3];
+      int32_t diff = t - v - words;
       if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
       flush_extra();
     }

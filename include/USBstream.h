@@ -24,7 +24,7 @@ public:
 
   int GetUSB() const { return myusb; }
   const char* GetFileName() { return myfilename.c_str(); }
-  uint64_t GetTOLUTC() const { return mytolutc; }
+  uint32_t GetTOLUTC() const { return mytolutc; }
 
   bool GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec);
   void GetBaselineData(DataVector *vec);
@@ -39,7 +39,7 @@ private:
   int offset[64 /* maxModules */];
   int adj1[64];
   int adj2[64];
-  uint64_t mytolutc;
+  uint32_t mytolutc;
   std::string myfilename;
   std::fstream *myFile;
   bool BothLayerThresh;
@@ -48,13 +48,13 @@ private:
   DataVector::iterator sortedpacketsptr;
 
   // These functions are for the decoding
-  bool got_word(uint64_t d);
+  bool got_word(uint32_t d);
   void check_data();
-  bool check_debug(uint64_t d);
+  bool check_debug(uint32_t d);
   void flush_extra();
 
   // These variables are for the decoding
-  int64_t words;
+  int32_t words;
   bool got_hi;
   bool restart;
   bool first_packet;
