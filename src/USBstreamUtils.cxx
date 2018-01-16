@@ -30,6 +30,7 @@ void start_log()
   log_msg(LOG_NOTICE, "OV Event Builder Started\n");
 }
 
+/* Returns true if the packet 'lhs' is earlier in time than 'rhs' */
 bool LessThan(const std::vector<uint16_t> & lhs,
               const std::vector<uint16_t> & rhs, const int ClockSlew)
 {

@@ -383,21 +383,12 @@ void USBstream::check_data()
         MuonEvent = true;
       }
 
-      if(packet.size() > MIN_ADC_PACKET_SIZE) {
-        if(MuonEvent) { // Mu-like double found for this event
-          DataVector::iterator InsertionSortIt = sortedpackets.end();
-          bool found = false;
-          while(--InsertionSortIt >= sortedpackets.begin()) {
-            if(!LessThan(packet, *InsertionSortIt, 0)) {
-              sortedpackets.insert(InsertionSortIt+1, packet);
-              found = true;
-              break;
-            }
-          }
-
-          // Reached beginning of sortedpackets
-          if(!found) sortedpackets.insert(sortedpackets.begin(), packet);
-        }
+      if(packet.size() > MIN_ADC_PACKET_SIZE && MuonEvent){
+        // Slot this packet into place in time order, searching from the end
+        DataVector::iterator i = sortedpackets.end();
+        while(i != sortedpackets.begin() && LessThan(packet, *(i-1), 0))
+          i--;
+        sortedpackets.insert(i, packet);
       }
 
       //delete the data that we've decoded into 'packet'
