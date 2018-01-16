@@ -29,8 +29,6 @@ USBstream::USBstream()
   word_count[1] = 0;
   word_count[2] = 0;
   word_count[3] = 0;
-  myvec.reserve(0x10000);
-  myit=myvec.begin();
   BothLayerThresh = false;
   UseThresh = false;
   for(int i = 0; i < 32; i++) { // Map of adjacent channels
@@ -88,48 +86,52 @@ void USBstream::GetBaselineData(DataVector *vec)
   if(!vec->empty())
     log_msg(LOG_CRIT, "Expected vec to be empty for GetBaselineData()\n");
 
-  for(myit = myvec.begin(); myit != myvec.end(); myit++)
-    if(myit->size() > /* >= ? */ MIN_ADC_PACKET_SIZE)
-      vec->push_back(*myit);
+  for(DataVector::iterator i = sortedpackets.begin();
+      i != sortedpackets.end(); i++)
+    if(i->size() > /* >= ? */ MIN_ADC_PACKET_SIZE)
+      vec->push_back(*i);
+
+  // Done with baselines. Clear this to be ready for the main data.
+  sortedpackets.clear();
 
   unix_time_hi = unix_time_lo = 0;
 }
 
-// Empirically, returns true if it finds a *Unix* time stamp past the location
-// of myit when called.  Otherwise, returns false and sets myit to myvec.end().
-// Also fills vec with whatever it iterates past in myvec.
+// Appends all decoded data to 'vec' up to the next change of Unix time stamp
+// or the end of the decoded data, whichever is sooner.  In the former case,
+// returns true, otherwise false.
 bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
 {
-  if(myit == myvec.end()){
+  if(sortedpacketsptr == sortedpackets.end()){
     log_msg(LOG_NOTICE, "No decoded data to send (Unix time stamp %lu) "
       "for USB %d\n", mytolutc, myusb);
     return false;
   }
 
-  for( ; myit != myvec.end(); myit++) {
-    vec.push_back(*myit);
+  for( ; sortedpacketsptr != sortedpackets.end(); sortedpacketsptr++) {
+    vec.push_back(*sortedpacketsptr);
 
-    if(myit->size() <= 4) continue;
+    if(sortedpacketsptr->size() <= 2) continue;
 
-    const uint64_t new_time = ((uint64_t)(*myit)[1] << 16)
-                            + ((uint64_t)(*myit)[2]      );
+    const uint64_t new_time = ((uint64_t)(*sortedpacketsptr)[1] << 16)
+                            + ((uint64_t)(*sortedpacketsptr)[2]      );
 
     if(new_time > mytolutc) break;
   }
 
-  if(myit == myvec.end()){
+  if(sortedpacketsptr == sortedpackets.end()){
     log_msg(LOG_NOTICE, "Sent decoded data up to end (Unix time stamp "
       "%lu) for USB %d\n", mytolutc, myusb);
     return false;
   }
 
-  mytolutc = ((uint64_t)(*myit)[1] << 16)
-           + ((uint64_t)(*myit)[2]      );
+  mytolutc = ((uint64_t)(*sortedpacketsptr)[1] << 16)
+           + ((uint64_t)(*sortedpacketsptr)[2]      );
 
   log_msg(LOG_NOTICE, "Sent decoded data up to Unix time stamp %lu for "
     "USB %d\n", mytolutc, myusb);
 
-  myit++;
+  sortedpacketsptr++; // Point at the next packet after the Unix timestamp
 
   return true;
 }
@@ -177,8 +179,9 @@ void USBstream::decode()
 
   if(!myFile->is_open()) log_msg(LOG_CRIT, "File not open! Exiting.\n");
 
-  if     (myit == myvec.end()) myvec.clear();
-  else if(myit  < myvec.end()) myvec.assign(myit, myvec.end());
+  // Throw out what has already been passed on up
+  if(sortedpacketsptr <= sortedpackets.end())
+    sortedpackets.assign(sortedpacketsptr, sortedpackets.end());
 
   Reset();
 
@@ -211,10 +214,10 @@ void USBstream::decode()
           exp = 0;
 
           if(got_word(word)) { //24-bit word stored, process it
-            restart = false;
-            myit = myvec.end();
-            myFile->seekg(std::ios::beg);
+            sortedpackets.clear();
             data.clear();
+            myFile->seekg(std::ios::beg);
+            restart = false;
             goto top;
           }
         }
@@ -235,7 +238,7 @@ void USBstream::decode()
   delete myFile;
   myFile = NULL;
 
-  myit = myvec.begin();
+  sortedpacketsptr = sortedpackets.begin();
 }
 
 /* This would be better named "process_word()" */
@@ -292,136 +295,131 @@ void USBstream::check_data()
     if(data[0] == 0xffff) {
       if(data.size() < 2) break;
 
-      unsigned int len = data[1] & 0xff;
-      if(len > 1) {
-        if(data.size() < len + 1) break;
+      unsigned int len = data[ADC_WIDX_MODLEN] & 0xff;
+      if(len == 0) continue;
+      if(data.size() < len + 1) break;
 
-        unsigned int parity = 0;
-        uint8_t module = (data[1] >> 8) & 0x7f;
-        uint8_t type = data[1] >> 15; // check to see if trigger packets
-        std::vector<uint16_t> packet;
-        bool hitarray1[64] = {0};
-        bool hitarray2[64] = {0};
+      unsigned int parity = 0;
+      const uint8_t module = (data[ADC_WIDX_MODLEN] >> 8) & 0x7f;
+      const bool isadcpacket = data[ADC_WIDX_MODLEN] >> 15;
+      std::vector<uint16_t> packet;
+      bool hitarray1[64] = {0};
+      bool hitarray2[64] = {0};
 
-        for(unsigned int wordi = ADC_WIDX_MODLEN; wordi < len; wordi++){
-          parity ^= data[wordi];
+      for(unsigned int wordi = ADC_WIDX_MODLEN; wordi < len; wordi++){
+        parity ^= data[wordi];
 
-          if(wordi == ADC_WIDX_CLKLO) {
-            if(module <= 63) {
-              const int low = (int)data[wordi] - offset[module];
-              if(low < 0) {
-                const int high = (int)packet.back() - 1;
+        if(wordi == ADC_WIDX_CLKLO) {
+          if(module <= 63) {
+            const int low = (int)data[wordi] - offset[module];
+            if(low < 0) {
+              const int high = (int)packet.back() - 1;
 
-                // sync packets come every 2^29 clock counts
-                const int highcorr = high < 0? high + (1 << 13): high;
+              // sync packets come every 2^29 clock counts
+              const int highcorr = high < 0? high + (1 << 13): high;
 
-                packet.pop_back();
-                packet.push_back(highcorr);
-                packet.push_back(low + (1 << 16));
-              }
-              else {
-                packet.push_back(low);
-              }
+              packet.pop_back();
+              packet.push_back(highcorr);
+              packet.push_back(low + (1 << 16));
             }
             else {
-              log_msg(LOG_ERR, "Invalid module number %u\n", module);
-              packet.push_back(data[wordi]);
-            }
-          }
-          else if(wordi < ADC_WIDX_HIT) {
-            packet.push_back(data[wordi]);
-          }
-          else { // we are in the words that give the hit info
-            if(type) {
-              if(wordi%2 == 0) { // ADC charge
-                if(data[wordi+1] < 64 && module < 64) {
-                  // Baseline subtraction can make ADC negative.  Use signed
-                  // value here, but do not modify the value in packet. This
-                  // is done when writing out.
-                  const int adc = data[wordi] - baseline[module][data[wordi+1]];
-                  if(adc > mythresh) hitarray2[data[wordi+1]] = true;
-
-                  packet.push_back(data[wordi]);
-                  packet.push_back(data[wordi+1]);
-                  hitarray1[data[wordi+1]] = true;
-                }
-              }
-            }
-            else { packet.push_back(data[wordi]); }
-          }
-
-          if(wordi == ADC_WIDX_MODLEN) {
-            packet.push_back(unix_time_hi);
-            packet.push_back(unix_time_lo);
-          }
-        }
-
-        if(parity != data[len])
-          log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
-
-        got_packet = true;
-        flush_extra();
-        if(first_packet) { first_packet = false; }
-
-        // This block builds muon events
-        bool MuonEvent = false;
-        if(UseThresh && type) {
-          if(BothLayerThresh) {
-            for(int i = 0; i<32; i++) {
-              if( hitarray2[i]) {
-                if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
-                  MuonEvent = true;
-                  break;
-                }
-              }
+              packet.push_back(low);
             }
           }
           else {
-            for(int i = 0; i<32; i++) {
-              if(hitarray1[i]) {
-                if( hitarray2[adj1[i]] || hitarray2[adj2[i]] ){
-                  MuonEvent = true;
-                  break;
-                }
-              }
-              if(hitarray2[i]) {
-                if( hitarray1[adj1[i]] || hitarray1[adj2[i]] ){
-                  MuonEvent = true;
-                  break;
-                }
-              }
+            log_msg(LOG_ERR, "Invalid module number %u\n", module);
+            packet.push_back(data[wordi]);
+          }
+        }
+        else if(wordi < ADC_WIDX_HIT) {
+          packet.push_back(data[wordi]);
+        }
+        else { // we are in the words that give the hit info
+          if(isadcpacket) {
+            if(wordi%2 == 0 && // ADC charge
+               data[wordi+1] < 64 && module < 64) {
+              // Baseline subtraction can make ADC negative.  Use signed
+              // value here, but do not modify the value in packet. This
+              // is done when writing out.
+              const int adc = data[wordi] - baseline[module][data[wordi+1]];
+              if(adc > mythresh) hitarray2[data[wordi+1]] = true;
+
+              packet.push_back(data[wordi]);
+              packet.push_back(data[wordi+1]);
+              hitarray1[data[wordi+1]] = true;
+            }
+          }
+          else { packet.push_back(data[wordi]); }
+        }
+
+        if(wordi == ADC_WIDX_MODLEN) {
+          packet.push_back(unix_time_hi);
+          packet.push_back(unix_time_lo);
+        }
+      }
+
+      if(parity != data[len])
+        log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
+
+      got_packet = true;
+      flush_extra();
+      if(first_packet) { first_packet = false; }
+
+      // This block builds muon events
+      bool MuonEvent = false;
+      if(UseThresh && isadcpacket) {
+        if(BothLayerThresh) {
+          for(int i = 0; i<32; i++) {
+            if(hitarray2[i] &&
+               (hitarray2[adj1[i]] || hitarray2[adj2[i]])){
+              MuonEvent = true;
+              break;
             }
           }
         }
         else {
-          MuonEvent = true;
-        }
-
-        if(packet.size() > MIN_ADC_PACKET_SIZE) {
-          if(MuonEvent) { // Mu-like double found for this event
-            if( myvec.size() > 0 ) {
-              DataVector::iterator InsertionSortIt = myvec.end();
-              bool found = false;
-              while(--InsertionSortIt >= myvec.begin()) {
-                if(!LessThan(packet, *InsertionSortIt, 0)) {
-                  myvec.insert(InsertionSortIt+1, packet);
-                  found = true;
-                  break;
-                }
-              }
-
-              // Reached beginning of myvec
-              if(!found)
-                myvec.insert(myvec.begin(), packet);
+          for(int i = 0; i<32; i++) {
+            if(hitarray1[i] &&
+               (hitarray2[adj1[i]] || hitarray2[adj2[i]])){
+              MuonEvent = true;
+              break;
             }
-            else {
-              myvec.push_back(packet);
+            if(hitarray2[i] &&
+               (hitarray1[adj1[i]] || hitarray1[adj2[i]])){
+              MuonEvent = true;
+              break;
             }
           }
         }
-        //delete first few elements of data
-        data.erase(data.begin(),data.begin()+len+1); //(no longer)
       }
+      else {
+        MuonEvent = true;
+      }
+
+      if(packet.size() > MIN_ADC_PACKET_SIZE) {
+        if(MuonEvent) { // Mu-like double found for this event
+          if(!sortedpackets.empty()) {
+            DataVector::iterator InsertionSortIt = sortedpackets.end();
+            bool found = false;
+            while(--InsertionSortIt >= sortedpackets.begin()) {
+              if(!LessThan(packet, *InsertionSortIt, 0)) {
+                sortedpackets.insert(InsertionSortIt+1, packet);
+                found = true;
+                break;
+              }
+            }
+
+            // Reached beginning of sortedpackets
+            if(!found) sortedpackets.insert(sortedpackets.begin(), packet);
+          }
+          else {
+            sortedpackets.push_back(packet);
+          }
+        }
+      }
+
+      //delete the data that we've decoded into 'packet'
+      data.erase(data.begin(), data.begin()+len+1);
     }
     if(!got_packet)
     {

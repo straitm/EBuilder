@@ -44,8 +44,8 @@ private:
   std::fstream *myFile;
   bool BothLayerThresh;
   bool UseThresh;
-  DataVector myvec;
-  DataVector::iterator myit;
+  DataVector sortedpackets;
+  DataVector::iterator sortedpacketsptr;
 
   // These functions are for the decoding
   bool got_word(uint64_t d);
