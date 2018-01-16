@@ -18,17 +18,9 @@ USBstream::USBstream()
 {
   mythresh=0;
   myusb=-1;
-  words = 0;
-  got_hi = false;
-  restart = false;
-  first_packet = false;
+  got_unix_time_hi = false;
   unix_time_hi = 0;
   unix_time_lo = 0;
-  word_index = 0;
-  word_count[0] = 0;
-  word_count[1] = 0;
-  word_count[2] = 0;
-  word_count[3] = 0;
   BothLayerThresh = false;
   UseThresh = false;
   for(int i = 0; i < 32; i++) { // Map of adjacent channels
@@ -42,13 +34,7 @@ USBstream::USBstream()
 
 void USBstream::Reset()
 {
-  words = 0;
-  got_hi = false;
-  word_index = 0;
-  word_count[0] =  0;
-  word_count[1] = 0;
-  word_count[2] = 0;
-  word_count[3] = 0;
+  got_unix_time_hi = false;
 }
 
 void USBstream::SetOffset(const int module, const int off)
@@ -169,8 +155,8 @@ int USBstream::LoadFile(std::string nextfile)
 void USBstream::decode()
 {
   top: // we return here if triggered by restart leading from finding
-       // something-something-something about a Unix timestamp packet
-       // on the line marked beltshortcrimefight.
+       // the first Unix timestamp packet, which means we have to go
+       // back and assign the time to each hit that came before that packet.
 
   const unsigned int BUFSIZE = 0x10000;
 
@@ -228,9 +214,8 @@ void USBstream::decode()
 
           if(got_word(word)) { //24-bit word stored, process it
             sortedpackets.clear();
-            data.clear();
+            raw16bitdata.clear();
             myFile->seekg(std::ios::beg);
-            restart = false;
             goto top;
           }
         }
@@ -250,77 +235,72 @@ void USBstream::decode()
   sortedpacketsptr = sortedpackets.begin();
 }
 
-/* This would be better named "process_word()" */
-bool USBstream::got_word(uint32_t d)
+/* This would be better named "process_word()". Returns true if we need
+ * to rewind to the beginning of the file. */
+bool USBstream::got_word(uint32_t in24bitword)
 {
-  words++;
-  char type = (d >> 22) & 3;
-  if(type == 1) {
-    // Old comment here said "command word, not data". Apparently there
-    // are 24 bit words undocumented in Matt Toups' thesis that start
-    // with 01b instead of 11b, but we just ignore them.
-  }
-  else if(type == 3)
-    {
-      if(check_debug(d))
-        return restart;
+  // Old comment here said "command word, not data" for the case that
+  // the first two bits were 01b. Apparently there are 24 bit words
+  // undocumented in Matt Toups' thesis that start with values other
+  // than 11b, but we just ignore them.
+  if(((in24bitword >> 22) & 3) == 3) {
+    if(handle_unix_time_words(in24bitword)) return true;
 
-      data.push_back(d & 0xffff);
-      check_data();
-    }
-  return 0;
+    raw16bitdata.push_back(in24bitword & 0xffff);
+    check_data();
+  }
+  return false;
 }
 
 /* This function is called "check_data", but it is clearly not just
  * checking.  It is decoding. */
 void USBstream::check_data()
 {
+  // ADC packet word indices.  As per Toups thesis:
+  //
+  // 0xffff                         | Header word
+  // 1, mod#[7 bits], wdcnt[8 bits] | Data type, module #, word count
+  // time                           | High 16 bits of 62.5 MHz clock counter
+  // time                           | Low  16 bits of 62.5 MHz clock counter
+  // adc                            | ADC ...
+  // channel                        | ... and channel number, repeated N times
+  // parity                         | Parity
+  enum ADC_WINX { ADC_WIDX_HEAD   = 0,
+                  ADC_WIDX_MODLEN = 1,
+                  ADC_WIDX_CLKHI  = 2,
+                  ADC_WIDX_CLKLO  = 3,
+                  ADC_WIDX_HIT    = 4 };
+
   // Try to decode the data in 'data'. Stop trying if 'data' is empty, or
   // if it starts out right with 0xffff but has nothing else, or if it is
   // shorter than the length it claims to have.  But otherwise, drop the
   // first word and try to decode again.
-  while(1)
-  {
-    // ADC packet word indices.  As per Toups thesis:
-    //
-    // 0xffff                         | Header word
-    // 1, mod#[7 bits], wdcnt[8 bits] | Data type, module #, word count
-    // time                           | High 16 bits of 62.5 MHz clock counter
-    // time                           | Low  16 bits of 62.5 MHz clock counter
-    // adc                            | ADC ...
-    // channel                        | ... and channel number, repeated N times
-    // parity                         | Parity
-    enum ADC_WINX { ADC_WIDX_HEAD   = 0,
-                    ADC_WIDX_MODLEN = 1,
-                    ADC_WIDX_CLKHI  = 2,
-                    ADC_WIDX_CLKLO  = 3,
-                    ADC_WIDX_HIT    = 4 };
-
+  while(1) {
     bool got_packet = false;
 
-    if(data.empty()) break;
+    if(raw16bitdata.empty()) break;
 
     // First word of all packets other than unix timestamp packets is 0xffff
-    if(data[0] == 0xffff) {
-      if(data.size() < 2) break;
+    if(raw16bitdata[0] == 0xffff) {
+      if(raw16bitdata.size() < 2) break;
 
-      unsigned int len = data[ADC_WIDX_MODLEN] & 0xff;
+      unsigned int len = raw16bitdata[ADC_WIDX_MODLEN] & 0xff;
       if(len == 0) continue;
-      if(data.size() < len + 1) break;
+      if(raw16bitdata.size() < len + 1) break;
 
       unsigned int parity = 0;
-      const uint8_t module = (data[ADC_WIDX_MODLEN] >> 8) & 0x7f;
-      const bool isadcpacket = data[ADC_WIDX_MODLEN] >> 15;
+      const uint8_t module = (raw16bitdata[ADC_WIDX_MODLEN] >> 8) & 0x7f;
+      const bool isadcpacket = raw16bitdata[ADC_WIDX_MODLEN] >> 15;
       std::vector<uint16_t> packet;
       bool hitarray1[64] = {0};
       bool hitarray2[64] = {0};
 
       for(unsigned int wordi = ADC_WIDX_MODLEN; wordi < len; wordi++){
-        parity ^= data[wordi];
+        parity ^= raw16bitdata[wordi];
 
         if(wordi == ADC_WIDX_CLKLO) {
           if(module <= 63) {
-            const int low = (int)data[wordi] - offset[module];
+            const int low = (int)raw16bitdata[wordi] - offset[module];
             if(low < 0) {
               const int high = (int)packet.back() - 1;
 
@@ -337,28 +317,28 @@ void USBstream::check_data()
           }
           else {
             log_msg(LOG_ERR, "Invalid module number %u\n", module);
-            packet.push_back(data[wordi]);
+            packet.push_back(raw16bitdata[wordi]);
           }
         }
         else if(wordi < ADC_WIDX_HIT) {
-          packet.push_back(data[wordi]);
+          packet.push_back(raw16bitdata[wordi]);
         }
         else { // we are in the words that give the hit info
           if(isadcpacket) {
             if(wordi%2 == 0 && // ADC charge
-               data[wordi+1] < 64 && module < 64) {
+               raw16bitdata[wordi+1] < 64 && module < 64) {
               // Baseline subtraction can make ADC negative.  Use signed
               // value here, but do not modify the value in packet. This
               // is done when writing out.
-              const int adc = data[wordi] - baseline[module][data[wordi+1]];
-              if(adc > mythresh) hitarray2[data[wordi+1]] = true;
+              const int adc = raw16bitdata[wordi] - baseline[module][raw16bitdata[wordi+1]];
+              if(adc > mythresh) hitarray2[raw16bitdata[wordi+1]] = true;
 
-              packet.push_back(data[wordi]);
-              packet.push_back(data[wordi+1]);
-              hitarray1[data[wordi+1]] = true;
+              packet.push_back(raw16bitdata[wordi]);
+              packet.push_back(raw16bitdata[wordi+1]);
+              hitarray1[raw16bitdata[wordi+1]] = true;
             }
           }
-          else { packet.push_back(data[wordi]); }
+          else { packet.push_back(raw16bitdata[wordi]); }
         }
 
         if(wordi == ADC_WIDX_MODLEN) {
@@ -367,11 +347,10 @@ void USBstream::check_data()
         }
       }
 
-      if(parity != data[len])
+      if(parity != raw16bitdata[len])
         log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
 
       got_packet = true;
-      if(first_packet) first_packet = false;
 
       // This block builds muon events
       bool MuonEvent = false;
@@ -406,38 +385,37 @@ void USBstream::check_data()
 
       if(packet.size() > MIN_ADC_PACKET_SIZE) {
         if(MuonEvent) { // Mu-like double found for this event
-          if(!sortedpackets.empty()) {
-            DataVector::iterator InsertionSortIt = sortedpackets.end();
-            bool found = false;
-            while(--InsertionSortIt >= sortedpackets.begin()) {
-              if(!LessThan(packet, *InsertionSortIt, 0)) {
-                sortedpackets.insert(InsertionSortIt+1, packet);
-                found = true;
-                break;
-              }
+          DataVector::iterator InsertionSortIt = sortedpackets.end();
+          bool found = false;
+          while(--InsertionSortIt >= sortedpackets.begin()) {
+            if(!LessThan(packet, *InsertionSortIt, 0)) {
+              sortedpackets.insert(InsertionSortIt+1, packet);
+              found = true;
+              break;
             }
+          }
 
-            // Reached beginning of sortedpackets
-            if(!found) sortedpackets.insert(sortedpackets.begin(), packet);
-          }
-          else {
-            sortedpackets.push_back(packet);
-          }
+          // Reached beginning of sortedpackets
+          if(!found) sortedpackets.insert(sortedpackets.begin(), packet);
         }
       }
 
       //delete the data that we've decoded into 'packet'
-      data.erase(data.begin(), data.begin()+len+1);
+      raw16bitdata.erase(raw16bitdata.begin(), raw16bitdata.begin()+len+1);
     }
 
-    if(!got_packet) data.pop_front();
+    if(!got_packet) raw16bitdata.pop_front();
   }
 }
 
 /*
-  This function is named "check_debug", but I don't think it is just
-  checking or debugging.  It seems to be decoding and setting variables
-  which are then used later.  Here's the old top-of-function comment:
+  If the input 24 bit word is part of a Unix timestamp packet, as revealed
+  by its control code (bits 3-8), set the Unix time on this USB stream, which
+  will be attached to hits from now on.  If we didn't know the time before,
+  signal that we need to rewind to the beginning of the file so these time
+  can be set.  Returns true in this case, false otherwise.
+
+  This function was named "check_debug". Here's the old top-of-function comment:
 
   # c1 dac pmt
   # c2 dac
@@ -451,71 +429,42 @@ void USBstream::check_data()
 
   These refer to the control bytes of DAQ packets.
 */
-bool USBstream::check_debug(uint32_t wordin)
+bool USBstream::handle_unix_time_words(const uint32_t wordin)
 {
-  uint8_t control = (wordin >> 16) & 0xff;
-  uint16_t payload = wordin & 0xffff;
+  const uint8_t control = (wordin >> 16) & 0xff;
+  const uint16_t payload = wordin & 0xffff;
+
+  // Two cases were here in the old code, one for control == 0xc1 and
+  // 0xc2. These are undocumented Toups thesis. Top of function says
+  // "dac pmt" and "dac", respectively, which isn't much to go on. For
+  // each, we end up doing nothing.
+  //
+  // For 0xc5, "skipped" and c6, "number of received data words", old
+  // code did some arithmetic and then discarded the result. Let's not.
 
   // Unix-timestamp-high-bits packet - see appendix B.2 of Matt
   // Toups' thesis.
   if(control == 0xc8) {
     unix_time_hi = payload;
-    got_hi = true;
-    return 1;
+    got_unix_time_hi = true;
   }
 
   // Unix-timestamp-low-bits packet - B.2 of Toups thesis
   else if(control == 0xc9) {
-    if(got_hi) {
+    if(got_unix_time_hi) {
       unix_time_lo = payload;
-      got_hi = false;
+      got_unix_time_hi = false;
 
-      // Check to see if first time stamp found and if so, rewind file
-      // (This cryptic line tagged: beltshortcrimefight)
+      // So if we've been reading hits, but don't know what the Unix time
+      // stamp is yet, now that we've found the Unix time stamp, set it
+      // and start reading the file from the beginning, this time setting
+      // the Unix time on each packet.
       if(!mytolutc) {
         mytolutc = ((uint32_t)unix_time_hi << 16) + unix_time_lo;
-        restart = true;
-        first_packet = true;
+        return true; // rewind file and get times set this time
       }
     }
-    return 1;
   }
 
-  // XXX undocumented packet type - only clue is "skipped" in the comment
-  // at the top of this function.
-  else if(control == 0xc5) {
-    word_index = 0;
-    return 1;
-  }
-
-  // Not explained in Toups thesis.  Top of function says
-  //    c6 data_hi    - number of received data words
-  //    c6 data_lo
-  //    c6 lost_hi     - number of lost data words
-  //    c6 lost_lo
-  // which could be more helpful.
-  else if(control == 0xc6) {
-    word_count[word_index++] = payload;
-    if(word_index == 4) {
-      int32_t t = (word_count[0] << 16) + word_count[1];
-      int32_t v = (word_count[2] << 16) + word_count[3];
-      int32_t diff = t - v - words;
-      if(diff < 0) { diff += (1 << 31); diff += (1 << 31); }
-    }
-    return 1;
-  }
-
-  // Not explained in Toups thesis.  Top of function says "dac pmt"
-  // which isn't much to go on.
-  else if(control == 0xc1) {
-    return 1;
-  }
-
-  // Not explained in Toups thesis.  Top of function says "dac"...
-  else if(control == 0xc2) {
-    return 1;
-  }
-  else{
-    return 0;
-  }
+  return false;
 }

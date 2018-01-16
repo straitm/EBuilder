@@ -50,21 +50,18 @@ private:
   // These functions are for the decoding
   bool got_word(uint32_t d);
   void check_data();
-  bool check_debug(uint32_t d);
+  bool handle_unix_time_words(const uint32_t wordin);
 
   // These variables are for the decoding
   int32_t words;
-  bool got_hi;
-  bool restart;
+  bool got_unix_time_hi;
   bool first_packet;
   uint16_t unix_time_hi;
   uint16_t unix_time_lo;
 
-  std::deque<uint16_t> data;
+  std::deque<uint16_t> raw16bitdata;
 
   bool extra; // leftovers
-  unsigned int word_index;
-  unsigned int word_count[4];
 };
 
 struct OVHitData {
