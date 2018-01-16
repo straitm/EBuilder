@@ -400,12 +400,11 @@ static void BuildEvent(const DataVector & in_packets,
     for(int m = 0; m < moduleheader.nHits; m++) {
       OVHitData hit;
       // Baseline substraction happens here, not in decode()
+      hit.channel = packet.at(6+2*m);
       hit.charge = packet.at(5+2*m)
                    - baselines[usbserial_to_usbindex[usb]]
                               [module_local]
                               [hit.channel];
-
-      hit.channel = packet.at(6+2*m);
 
       if(!hit.writeout(fd))
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
