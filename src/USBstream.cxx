@@ -68,7 +68,7 @@ void USBstream::GetBaselineData(DataVector *vec)
 
   for(DataVector::iterator i = sortedpackets.begin();
       i != sortedpackets.end(); i++)
-    if(i->size() > /* >= ? */ MIN_ADC_PACKET_SIZE)
+    if(!i->hits.empty())
       vec->push_back(*i);
 
   // Done with baselines. Clear this to be ready for the main data.
@@ -91,10 +91,9 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
   for( ; sortedpacketsptr != sortedpackets.end(); sortedpacketsptr++) {
     vec.push_back(*sortedpacketsptr);
 
-    if(sortedpacketsptr->size() <= 2) continue;
+    if(sortedpacketsptr->hits.empty()) continue;
 
-    const uint32_t new_time = ((uint32_t)(*sortedpacketsptr)[1] << 16)
-                            + ((uint32_t)(*sortedpacketsptr)[2]      );
+    const uint32_t new_time = sortedpacketsptr->timeunix;
 
     if(new_time > mytolutc) break;
   }
@@ -105,8 +104,7 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
     return false;
   }
 
-  mytolutc = ((uint32_t)(*sortedpacketsptr)[1] << 16)
-           + ((uint32_t)(*sortedpacketsptr)[2]      );
+  mytolutc = sortedpacketsptr->timeunix;
 
   log_msg(LOG_NOTICE, "Sent decoded data up to Unix time stamp %lu for "
     "USB %d\n", mytolutc, myusb);
@@ -304,9 +302,10 @@ void USBstream::raw16bit_to_packets()
       if(raw16bitdata.size() < len + 1) break;
 
       unsigned int parity = 0;
-      const uint8_t module = (raw16bitdata[ADC_WIDX_MODLEN] >> 8) & 0x7f;
-      const bool isadcpacket = raw16bitdata[ADC_WIDX_MODLEN] >> 15;
-      std::vector<uint16_t> packet;
+      decoded_packet packet;
+      packet.timeunix = ((uint32_t)unix_time_hi << 16) + unix_time_lo;
+      packet.module = (raw16bitdata[ADC_WIDX_MODLEN] >> 8) & 0x7f;
+      packet.isadc = raw16bitdata[ADC_WIDX_MODLEN] >> 15;
       bool allhits  [64] = {0}; // which channels were hit
       bool threshits[64] = {0}; // which channels were hit over threshold
 
@@ -314,53 +313,44 @@ void USBstream::raw16bit_to_packets()
         parity ^= raw16bitdata[wordi];
 
         if(wordi == ADC_WIDX_CLKLO) {
-          if(module <= 63) {
-            const int low = (int)raw16bitdata[wordi] - offset[module];
+          if(packet.module <= 63) {
+            const int low = (int)raw16bitdata[wordi] - offset[packet.module];
             if(low < 0) {
-              const int high = (int)packet.back() - 1;
+              const int high = (int)(packet.time16ns >> 16) - 1;
 
               // sync packets come every 2^29 clock counts
               const int highcorr = high < 0? high + (1 << 13): high;
 
-              packet.pop_back();
-              packet.push_back(highcorr);
-              packet.push_back(low + (1 << 16));
+              packet.time16ns = (highcorr << 16) + low + (1 << 16);
             }
             else {
-              packet.push_back(low);
+              packet.time16ns |= low;
             }
           }
           else {
-            log_msg(LOG_ERR, "Invalid module number %u\n", module);
-            packet.push_back(raw16bitdata[wordi]);
+            log_msg(LOG_ERR, "Invalid module number %u\n", packet.module);
+            packet.time16ns |= raw16bitdata[wordi];
           }
         }
-        else if(wordi < ADC_WIDX_HIT) {
-          packet.push_back(raw16bitdata[wordi]);
+        else if(wordi == ADC_WIDX_CLKHI) {
+          packet.time16ns |= (raw16bitdata[wordi] << 16);
         }
         else { // we are in the words that give the hit info
-          if(isadcpacket) {
+          if(packet.isadc) {
             if(wordi%2 == 0 && // ADC charge
-               raw16bitdata[wordi+1] < 64 && module < 64) {
-              // Baseline subtraction can make ADC negative.  Use signed
-              // value here, but do not modify the value in packet. This
-              // is done when writing out.
+               raw16bitdata[wordi+1] < 64 && packet.module < 64) {
               const int adc = raw16bitdata[wordi]
-                - baseline[module][raw16bitdata[wordi+1]];
+                - baseline[packet.module][raw16bitdata[wordi+1]];
 
               allhits[raw16bitdata[wordi+1]] = true;
               if(adc > mythresh) threshits[raw16bitdata[wordi+1]] = true;
 
-              packet.push_back(raw16bitdata[wordi]);
-              packet.push_back(raw16bitdata[wordi+1]);
+              decoded_hit hit;
+              hit.charge = adc;
+              hit.channel = raw16bitdata[wordi+1];
+              packet.hits.push_back(hit);
             }
           }
-          else { packet.push_back(raw16bitdata[wordi]); }
-        }
-
-        if(wordi == ADC_WIDX_MODLEN) {
-          packet.push_back(unix_time_hi);
-          packet.push_back(unix_time_lo);
         }
       }
 
@@ -369,10 +359,7 @@ void USBstream::raw16bit_to_packets()
 
       got_packet = true;
 
-      const bool passes_cut = !UseThresh || !isadcpacket ||
-                              ThresholdCut(allhits, threshits);
-
-      if(packet.size() > MIN_ADC_PACKET_SIZE && passes_cut){
+      if(!UseThresh || !packet.isadc || ThresholdCut(allhits, threshits)){
         // Slot this packet into place in time order, searching from the end
         DataVector::iterator i = sortedpackets.end();
         while(i != sortedpackets.begin() && LessThan(packet, *(i-1), 0))

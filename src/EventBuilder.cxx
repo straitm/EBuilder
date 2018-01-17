@@ -331,24 +331,19 @@ static void BuildEvent(const DataVector & in_packets,
     return;
   }
 
-  const std::vector<uint16_t> & firstpacket = in_packets[0];
+  const decoded_packet & firstpacket = in_packets[0];
 
   OVEventHeader evheader;
-  evheader.time_sec = ((uint32_t)firstpacket.at(1) << 16)
-                    +  (uint32_t)firstpacket.at(2);
+  evheader.time_sec = firstpacket.timeunix;
   evheader.n_ov_data_packets = in_packets.size();
 
   if(!evheader.writeout(fd))
     log_msg(LOG_CRIT, "Fatal Error: Cannot write event header!\n");
 
   for(unsigned int packeti = 0; packeti < in_packets.size(); packeti++){
-    const std::vector<uint16_t> & packet = in_packets[packeti];
+    const decoded_packet & packet = in_packets[packeti];
 
-    if(packet.size() < MIN_ADC_PACKET_SIZE - 2)
-      log_msg(LOG_CRIT, "Fatal Error in BuildEvent(): packet of size %u < %u\n",
-         (unsigned int) packet.size(), MIN_ADC_PACKET_SIZE);
-
-    const int module_local = (packet.at(0) >> 8) & 0x7f;
+    const int module_local = packet.module;
     // EBuilder temporary internal mapping is decoded back to pmtboard_u
     const int usb = OVUSBStream[OutIndex[packeti]].GetUSB();
     if(!PMTUniqueMap.count(std::pair<int, int>(usb, module_local)))
@@ -356,12 +351,10 @@ static void BuildEvent(const DataVector & in_packets,
               module_local, usb);
 
     const int16_t module = PMTUniqueMap[std::pair<int, int>(usb, module_local)];
-    const int8_t type = packet.at(0) >> 15;
-    const uint16_t time_16ns_hi = packet.at(3);
-    const uint16_t time_16ns_lo = packet.at(4);
-    const uint32_t time_16ns= ((uint32_t)time_16ns_hi << 16)+time_16ns_lo;
+    const int8_t type = packet.isadc;
+    const uint32_t time_16ns= packet.time16ns;
 
-    if(type != kOVR_ADC){
+    if(!packet.isadc){
       log_msg(LOG_ERR, "Got non-ADC packet, type %d. Not supported!\n", type);
       continue;
     }
@@ -369,28 +362,28 @@ static void BuildEvent(const DataVector & in_packets,
     // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
     // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows in 62.5 MHz
     // clock count bit corresponding to SYNC_PULSE_CLK_COUNT_PERIOD_LOG2
-    if( (time_16ns_hi >> (SYNC_PULSE_CLK_COUNT_PERIOD_LOG2 - 16)) ) {
+    if( time_16ns > (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) ) {
       if(!overflow[module]) {
         log_msg(LOG_WARNING, "Module %d missed sync pulse near "
           "time stamp %ld\n", module, evheader.time_sec);
         overflow[module] = true;
       }
-      maxcount_16ns_lo[module] = time_16ns_lo;
-      maxcount_16ns_hi[module] = time_16ns_hi;
+      maxcount_16ns_lo[module] = time_16ns & 0xffff;
+      maxcount_16ns_hi[module] = time_16ns >> 16;
     }
     else {
       if(overflow[module]) {
         log_msg(LOG_WARNING, "Module %d max clock count hi: %ld\tlo: %ld\n",
           module, maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
-        maxcount_16ns_lo[module] = time_16ns_lo;
-        maxcount_16ns_hi[module] = time_16ns_hi;
+        maxcount_16ns_lo[module] = time_16ns & 0xffff;
+        maxcount_16ns_hi[module] = time_16ns >> 16;
         overflow[module] = false;
       }
     }
 
     OVDataPacketHeader moduleheader;
     // Hits are two words each
-    moduleheader.nHits = (packet.size()-(MIN_ADC_PACKET_SIZE-2))/2;
+    moduleheader.nHits = packet.hits.size();
     moduleheader.module = module;
     moduleheader.time16ns = time_16ns;
 
@@ -400,11 +393,8 @@ static void BuildEvent(const DataVector & in_packets,
     for(int m = 0; m < moduleheader.nHits; m++) {
       OVHitData hit;
       // Baseline substraction happens here, not in decode()
-      hit.channel = packet.at(6+2*m);
-      hit.charge = packet.at(5+2*m)
-                   - baselines[usbserial_to_usbindex[usb]]
-                              [module_local]
-                              [hit.channel];
+      hit.channel = packet.hits[m].channel;
+      hit.charge = packet.hits[m].charge;
 
       if(!hit.writeout(fd))
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
@@ -497,12 +487,8 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
       BaselineDataIt != BaselineData.end();
       BaselineDataIt++) {
 
-    if(BaselineDataIt->size() < MIN_ADC_PACKET_SIZE ||
-       BaselineDataIt->size() % 2 != MIN_ADC_PACKET_SIZE % 2)
-      log_msg(LOG_CRIT, "Corrupted baseline data packet found\n");
-
-    const int module = (BaselineDataIt->at(0) >> 8) & 0x7f;
-    const int type = BaselineDataIt->at(0) >> 15;
+    const int module = BaselineDataIt->module;
+    const int type = BaselineDataIt->isadc;
 
     if(type != kOVR_ADC) continue;
 
@@ -510,9 +496,9 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
       log_msg(LOG_CRIT, "Fatal Error: Module number requested "
         "(%d) out of range (0-%d) in calculate pedestal\n", module, maxModules);
 
-    for(int i = 5 /* const here would be nice */; i+1 < (int)BaselineDataIt->size(); i += 2) {
-      const int charge = BaselineDataIt->at(i);
-      const int channel = BaselineDataIt->at(i+1); // Channels run 0-63
+    for(unsigned int i = 0; i < BaselineDataIt->hits.size(); i++) {
+      const int charge = BaselineDataIt->hits[i].charge;
+      const int channel = BaselineDataIt->hits[i].channel;
       if(channel >= numChannels)
         log_msg(LOG_CRIT, "Fatal Error: Channel number requested "
           "(%d) out of range (0-%d) in calculate pedestal\n",
@@ -716,7 +702,7 @@ static unsigned int SuperBuildEvents(vector<DataVector> & CurrentData,
   // I don't know how many of these need to be static
   static DataVector::iterator CurrentDataIt[maxUSB];
   static DataVector MinData; // Current minimum data packets
-  static vector<uint16_t> MinDataPacket; // Minimum and Last Data Packets added
+  static decoded_packet MinDataPacket; // Minimum and Last Data Packets added
   static vector<int> MinIndex; // USB indices of Minimum Data Packet
   static DataVector ExtraData; // carries over events from last time stamp
   static vector<int> ExtraIndex;
@@ -742,7 +728,7 @@ static unsigned int SuperBuildEvents(vector<DataVector> & CurrentData,
     MinDataPacket = *(CurrentDataIt[imin]);
 
     for(unsigned int k = 0; k < numUSB; k++) { // Loop over USB streams, find minimum
-      vector<uint16_t> CurrentDataPacket = *(CurrentDataIt[k]);
+      decoded_packet CurrentDataPacket = *(CurrentDataIt[k]);
 
       // Find real minimum; no clock slew
       if( LessThan(CurrentDataPacket, MinDataPacket, 0) ) {

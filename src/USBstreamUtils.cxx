@@ -3,7 +3,10 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <syslog.h>
+
 #include <vector>
+
+#include "USBstream-TypeDef.h"
 
 void log_msg(const int priority, const char * const format, ...)
 {
@@ -31,16 +34,13 @@ void start_log()
 }
 
 /* Returns true if the packet 'lhs' is earlier in time than 'rhs' */
-bool LessThan(const std::vector<uint16_t> & lhs,
-              const std::vector<uint16_t> & rhs, const int ClockSlew)
+bool LessThan(const decoded_packet & lhs,
+              const decoded_packet & rhs, const int ClockSlew)
 {
-  if(lhs.size() < 7 || rhs.size() < 7)
-    log_msg(LOG_CRIT, "Vector size error! Could not compare OV Hits\n");
-
-  const int64_t dt_unix_hi = (int64_t)lhs[1] - rhs[1],
-                dt_unix_lo = (int64_t)rhs[2] - rhs[2];
-  const int64_t dt_16ns_high = (int64_t)lhs[3] - rhs[3];
-  const int64_t dt_16ns_low  = (int64_t)lhs[4] - rhs[4];
+  const int64_t dt_unix_hi = (int64_t)(lhs.timeunix >> 16) - (rhs.timeunix >> 16),
+                dt_unix_lo = (int64_t)(rhs.timeunix & 0xffff) - (rhs.timeunix & 0xffff);
+  const int64_t dt_16ns_high = (int64_t)(lhs.time16ns >> 16) - (rhs.time16ns >> 16);
+  const int64_t dt_16ns_low  = (int64_t)(lhs.time16ns & 0xffff) - (rhs.time16ns & 0xffff);
 
   if(dt_unix_hi != 0) return dt_unix_hi < 0; // Very different timestamps
   if(labs(dt_unix_lo) > 1) return dt_unix_lo < 0; // Timestamps are not adjacent
