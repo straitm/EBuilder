@@ -6,8 +6,6 @@
 
 #include <vector>
 
-#include "USBstream-TypeDef.h"
-
 void log_msg(const int priority, const char * const format, ...)
 {
   va_list ap;

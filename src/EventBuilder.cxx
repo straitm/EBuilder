@@ -22,7 +22,6 @@
 #include <deque>
 #include <vector>
 
-#include "USBstream-TypeDef.h"
 #include "USBstream.h"
 #include "USBstreamUtils.h"
 
