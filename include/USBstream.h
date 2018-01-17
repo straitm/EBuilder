@@ -51,6 +51,7 @@ private:
   bool raw24bit_to_raw16bit(uint32_t d);
   void raw16bit_to_packets();
   bool handle_unix_time_words(const uint32_t wordin);
+  bool ThresholdCut(const bool * const allhits, const bool * const threshits);
 
   // These variables are for the decoding
   bool got_unix_time_hi;

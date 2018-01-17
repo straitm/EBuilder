@@ -247,6 +247,26 @@ bool USBstream::raw24bit_to_raw16bit(uint32_t in24bitword)
   return false;
 }
 
+// Return true if the hits in this module packet satisfy the cuts
+bool USBstream::ThresholdCut(const bool * const allhits,
+                             const bool * const threshits)
+{
+  for(int i = 0; i < 32; i++) {
+    // If this strip and an overlapping strip are over threshold
+    if(BothLayerThresh &&
+       threshits[i] && (threshits[adj1[i]] || threshits[adj2[i]]))
+      return true;
+
+    // If this strip is hit and an overlapping strip is over threshold
+    // or an overlapping strip is over threshold and this channel is hit
+    if(!BothLayerThresh &&
+       ((allhits  [i] && (threshits[adj1[i]] || threshits[adj2[i]])) ||
+        (threshits[i] && (allhits  [adj1[i]] || allhits  [adj2[i]]))))
+      return true;
+  }
+  return false;
+}
+
 /* This function was called "check_data", but it is clearly not just
  * checking.  It is decoding. */
 void USBstream::raw16bit_to_packets()
@@ -287,8 +307,8 @@ void USBstream::raw16bit_to_packets()
       const uint8_t module = (raw16bitdata[ADC_WIDX_MODLEN] >> 8) & 0x7f;
       const bool isadcpacket = raw16bitdata[ADC_WIDX_MODLEN] >> 15;
       std::vector<uint16_t> packet;
-      bool hitarray1[64] = {0};
-      bool hitarray2[64] = {0};
+      bool allhits  [64] = {0}; // which channels were hit
+      bool threshits[64] = {0}; // which channels were hit over threshold
 
       for(unsigned int wordi = ADC_WIDX_MODLEN; wordi < len; wordi++){
         parity ^= raw16bitdata[wordi];
@@ -325,12 +345,14 @@ void USBstream::raw16bit_to_packets()
               // Baseline subtraction can make ADC negative.  Use signed
               // value here, but do not modify the value in packet. This
               // is done when writing out.
-              const int adc = raw16bitdata[wordi] - baseline[module][raw16bitdata[wordi+1]];
-              if(adc > mythresh) hitarray2[raw16bitdata[wordi+1]] = true;
+              const int adc = raw16bitdata[wordi]
+                - baseline[module][raw16bitdata[wordi+1]];
+
+              allhits[raw16bitdata[wordi+1]] = true;
+              if(adc > mythresh) threshits[raw16bitdata[wordi+1]] = true;
 
               packet.push_back(raw16bitdata[wordi]);
               packet.push_back(raw16bitdata[wordi+1]);
-              hitarray1[raw16bitdata[wordi+1]] = true;
             }
           }
           else { packet.push_back(raw16bitdata[wordi]); }
@@ -347,38 +369,10 @@ void USBstream::raw16bit_to_packets()
 
       got_packet = true;
 
-      // This block builds muon events
-      bool MuonEvent = false;
-      if(UseThresh && isadcpacket) {
-        if(BothLayerThresh) {
-          for(int i = 0; i<32; i++) {
-            if(hitarray2[i] &&
-               (hitarray2[adj1[i]] || hitarray2[adj2[i]])){
-              MuonEvent = true;
-              break;
-            }
-          }
-        }
-        else {
-          for(int i = 0; i<32; i++) {
-            if(hitarray1[i] &&
-               (hitarray2[adj1[i]] || hitarray2[adj2[i]])){
-              MuonEvent = true;
-              break;
-            }
-            if(hitarray2[i] &&
-               (hitarray1[adj1[i]] || hitarray1[adj2[i]])){
-              MuonEvent = true;
-              break;
-            }
-          }
-        }
-      }
-      else {
-        MuonEvent = true;
-      }
+      const bool passes_cut = !UseThresh || !isadcpacket ||
+                              ThresholdCut(allhits, threshits);
 
-      if(packet.size() > MIN_ADC_PACKET_SIZE && MuonEvent){
+      if(packet.size() > MIN_ADC_PACKET_SIZE && passes_cut){
         // Slot this packet into place in time order, searching from the end
         DataVector::iterator i = sortedpackets.end();
         while(i != sortedpackets.begin() && LessThan(packet, *(i-1), 0))
