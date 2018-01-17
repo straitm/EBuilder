@@ -24,14 +24,14 @@ public:
   const char* GetFileName() { return myfilename.c_str(); }
   uint32_t GetTOLUTC() const { return mytolutc; }
 
-  bool GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec);
-  void GetBaselineData(DataVector *vec);
+  bool GetDecodedDataUpToNextUnixTimeStamp(std::vector<decoded_packet> & vec);
+  void GetBaselineData(std::vector<decoded_packet> *vec);
   int LoadFile(const std::string & nextfile);
   void decodefile();
 
 private:
 
-  int mythresh;
+  int16_t mythresh;
   int myusb;
   int baseline[64 /* maxModules */][64 /* numChannels */];
   int offset[64 /* maxModules */];
@@ -43,8 +43,8 @@ private:
   bool BothLayerThresh;
   bool UseThresh;
 
-  DataVector sortedpackets;
-  DataVector::iterator sortedpacketsptr;
+  std::vector<decoded_packet> sortedpackets;
+  std::vector<decoded_packet>::iterator sortedpacketsptr;
   std::deque<uint16_t> raw16bitdata;
 
   // These functions are for the decoding

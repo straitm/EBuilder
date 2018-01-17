@@ -37,18 +37,17 @@ void start_log()
 bool LessThan(const decoded_packet & lhs,
               const decoded_packet & rhs, const int ClockSlew)
 {
-  const int64_t dt_unix_hi = (int64_t)(lhs.timeunix >> 16) - (rhs.timeunix >> 16),
-                dt_unix_lo = (int64_t)(rhs.timeunix & 0xffff) - (rhs.timeunix & 0xffff);
-  const int64_t dt_16ns_high = (int64_t)(lhs.time16ns >> 16) - (rhs.time16ns >> 16);
-  const int64_t dt_16ns_low  = (int64_t)(lhs.time16ns & 0xffff) - (rhs.time16ns & 0xffff);
+  const int64_t dt_unix = (int64_t)lhs.timeunix - rhs.timeunix;
 
-  if(dt_unix_hi != 0) return dt_unix_hi < 0; // Very different timestamps
-  if(labs(dt_unix_lo) > 1) return dt_unix_lo < 0; // Timestamps are not adjacent
+  if(labs(dt_unix) > 1) return dt_unix < 0; // Timestamps are not adjacent
 
-  // Was sync pulse 2sec (sqrd)
-  if(labs(dt_16ns_high) > 2000) return dt_16ns_high > 0;
+  const int64_t dt_16ns = (int64_t)lhs.time16ns - rhs.time16ns;
 
-  if(dt_16ns_high != 0) return dt_16ns_high < 0; // Order hi 16 bits of clock counter
+  // Found comment "Was sync pulse 2sec (sqrd)"
+  // I do not understand what that means.  Is this supposed to be 0x2000 such
+  // that this indicates a clock overflow after missing a sync pulse?  That
+  // produces different results.
+  if(labs(dt_16ns) > 2000 * (1 << 16)) return dt_16ns > 0;
 
-  return dt_16ns_low < -ClockSlew; // Order lo 16 bits of clock counter
+  return dt_16ns < -ClockSlew;
 }

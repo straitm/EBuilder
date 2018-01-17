@@ -71,9 +71,6 @@ static const int maxModules=64; // Maximum number of modules PER USB
 // (sigh).  Filled in setup_from_config().
 static map<int, int> usbserial_to_usbindex;
 
-// Filled in GetBaselines and copied into USB. Scandalously waste of memory.
-static int baselines[maxUSB][maxModules][numChannels] = { { { } } };
-
 // Will stop if we haven't seen a new input file in ENDTIME seconds when
 // we know the run is over or MAXTIME seconds regardless. For Double
 // Chooz, MAXTIME was 60.
@@ -104,8 +101,9 @@ static USBstream OVUSBStream[maxUSB];
 
 // *Size* set in setup_from_config()
 static bool *overflow; // Keeps track of sync overflows for all boards
-static long int *maxcount_16ns_lo; // Keeps track of max clock count
-static long int *maxcount_16ns_hi; // for sync overflows for all boards
+
+// Keeps track of max clock count for sync overflows for all boards
+static long int *maxcount_16ns;
 
 
 // Decodes USB stream with array index *usbindex. For threading.
@@ -319,7 +317,7 @@ static bool OpenNextFileSet()
   return true;
 }
 
-static void BuildEvent(const DataVector & in_packets,
+static void BuildEvent(const vector<decoded_packet> & in_packets,
                        const vector<int> & OutIndex, const int fd)
 {
   if(fd <= 0)
@@ -331,10 +329,8 @@ static void BuildEvent(const DataVector & in_packets,
     return;
   }
 
-  const decoded_packet & firstpacket = in_packets[0];
-
   OVEventHeader evheader;
-  evheader.time_sec = firstpacket.timeunix;
+  evheader.time_sec = in_packets[0].timeunix;
   evheader.n_ov_data_packets = in_packets.size();
 
   if(!evheader.writeout(fd))
@@ -343,58 +339,47 @@ static void BuildEvent(const DataVector & in_packets,
   for(unsigned int packeti = 0; packeti < in_packets.size(); packeti++){
     const decoded_packet & packet = in_packets[packeti];
 
-    const int module_local = packet.module;
-    // EBuilder temporary internal mapping is decoded back to pmtboard_u
     const int usb = OVUSBStream[OutIndex[packeti]].GetUSB();
-    if(!PMTUniqueMap.count(std::pair<int, int>(usb, module_local)))
+    if(!PMTUniqueMap.count(std::pair<int, int>(usb, packet.module)))
       log_msg(LOG_ERR, "Got unknown module number %d on USB %d\n",
-              module_local, usb);
+              packet.module, usb);
 
-    const int16_t module = PMTUniqueMap[std::pair<int, int>(usb, module_local)];
-    const int8_t type = packet.isadc;
-    const uint32_t time_16ns= packet.time16ns;
+    const int16_t module = PMTUniqueMap[std::pair<int, int>(usb, packet.module)];
 
     if(!packet.isadc){
-      log_msg(LOG_ERR, "Got non-ADC packet, type %d. Not supported!\n", type);
+      log_msg(LOG_ERR, "Got non-ADC packet. Not supported!\n");
       continue;
     }
 
-    // Sync Pulse Diagnostic Info: Sync pulse expected at clk count =
-    // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows in 62.5 MHz
-    // clock count bit corresponding to SYNC_PULSE_CLK_COUNT_PERIOD_LOG2
-    if( time_16ns > (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) ) {
+    // Sync pulse diagnostic info: pulse expected at clock count
+    // 2^(SYNC_PULSE_CLK_COUNT_PERIOD_LOG2).  Look for overflows.
+    if( packet.time16ns > (1 << SYNC_PULSE_CLK_COUNT_PERIOD_LOG2) ) {
       if(!overflow[module]) {
         log_msg(LOG_WARNING, "Module %d missed sync pulse near "
-          "time stamp %ld\n", module, evheader.time_sec);
+          "Unix time stamp %ld\n", module, evheader.time_sec);
         overflow[module] = true;
       }
-      maxcount_16ns_lo[module] = time_16ns & 0xffff;
-      maxcount_16ns_hi[module] = time_16ns >> 16;
+      maxcount_16ns[module] = packet.time16ns;
     }
-    else {
-      if(overflow[module]) {
-        log_msg(LOG_WARNING, "Module %d max clock count hi: %ld\tlo: %ld\n",
-          module, maxcount_16ns_hi[module], maxcount_16ns_lo[module]);
-        maxcount_16ns_lo[module] = time_16ns & 0xffff;
-        maxcount_16ns_hi[module] = time_16ns >> 16;
-        overflow[module] = false;
-      }
+    else if(overflow[module]) {
+      log_msg(LOG_WARNING, "Module %d max clock count %ld\t",
+        module, maxcount_16ns[module]);
+      maxcount_16ns[module] = packet.time16ns;
+      overflow[module] = false;
     }
 
     OVDataPacketHeader moduleheader;
-    // Hits are two words each
     moduleheader.nHits = packet.hits.size();
     moduleheader.module = module;
-    moduleheader.time16ns = time_16ns;
+    moduleheader.time16ns = packet.time16ns;
 
     if(!moduleheader.writeout(fd))
       log_msg(LOG_CRIT, "Fatal Error: Cannot write data packet header!\n");
 
     for(int m = 0; m < moduleheader.nHits; m++) {
       OVHitData hit;
-      // Baseline substraction happens here, not in decode()
       hit.channel = packet.hits[m].channel;
-      hit.charge = packet.hits[m].charge;
+      hit.charge  = packet.hits[m].charge;
 
       if(!hit.writeout(fd))
         log_msg(LOG_CRIT, "Fatal Error: Cannot write hit!\n");
@@ -478,17 +463,17 @@ static string parse_options(int argc, char **argv)
 }
 
 static void CalculatePedestal(int baseptr[maxModules][numChannels],
-                              const DataVector & BaselineData)
+                              const vector<decoded_packet> & BaselineData)
 {
   double baseline[maxModules][numChannels] = {};
   int counter[maxModules][numChannels] = {};
 
-  for(DataVector::const_iterator BaselineDataIt = BaselineData.begin();
-      BaselineDataIt != BaselineData.end();
-      BaselineDataIt++) {
+  for(vector<decoded_packet>::const_iterator I = BaselineData.begin();
+      I != BaselineData.end();
+      I++) {
 
-    const int module = BaselineDataIt->module;
-    const int type = BaselineDataIt->isadc;
+    const int module = I->module;
+    const int type = I->isadc;
 
     if(type != kOVR_ADC) continue;
 
@@ -496,9 +481,9 @@ static void CalculatePedestal(int baseptr[maxModules][numChannels],
       log_msg(LOG_CRIT, "Fatal Error: Module number requested "
         "(%d) out of range (0-%d) in calculate pedestal\n", module, maxModules);
 
-    for(unsigned int i = 0; i < BaselineDataIt->hits.size(); i++) {
-      const int charge = BaselineDataIt->hits[i].charge;
-      const int channel = BaselineDataIt->hits[i].channel;
+    for(unsigned int i = 0; i < I->hits.size(); i++) {
+      const int charge = I->hits[i].charge;
+      const int channel = I->hits[i].channel;
       if(channel >= numChannels)
         log_msg(LOG_CRIT, "Fatal Error: Channel number requested "
           "(%d) out of range (0-%d) in calculate pedestal\n",
@@ -561,10 +546,11 @@ static bool GetBaselines()
   }
 
   for(unsigned int i = 0; i < numUSB; i++) {
-    DataVector BaselineData;
+    vector<decoded_packet> BaselineData;
     OVUSBStream[i].GetBaselineData(&BaselineData);
-    CalculatePedestal(baselines[i], BaselineData);
-    OVUSBStream[i].SetBaseline(baselines[i]);
+    int baselines[maxModules][numChannels] = { { } };
+    CalculatePedestal(baselines, BaselineData);
+    OVUSBStream[i].SetBaseline(baselines);
   }
 
   return true;
@@ -656,11 +642,9 @@ static void setup_from_config(const string & configfile)
   // Count the number of boards in this setup
   const int max_board   = sbop_max_board(sbops);
   overflow = new bool[max_board+1];
-  maxcount_16ns_hi = new long int[max_board+1];
-  maxcount_16ns_lo = new long int[max_board+1];
+  maxcount_16ns = new long int[max_board+1];
   memset(overflow, 0, (max_board+1)*sizeof(bool));
-  memset(maxcount_16ns_hi, 0, (max_board+1)*sizeof(long int));
-  memset(maxcount_16ns_lo, 0, (max_board+1)*sizeof(long int));
+  memset(maxcount_16ns, 0, (max_board+1)*sizeof(long int));
 
   for(unsigned int i = 0; i < numUSB; i++){
     OVUSBStream[i].SetThresh(Threshold, (int)EBTrigMode);
@@ -696,15 +680,15 @@ static bool write_end_block_and_close(const int data_fd)
 // have not really figured out what they are yet. Sorry sorry sorrysorrysorry.
 // In some fashion it does the building of the available data and leaves the
 // unbuilt data for the next try.  It returns the number of events built.
-static unsigned int SuperBuildEvents(vector<DataVector> & CurrentData,
-                                     const int fd)
+static unsigned int
+  SuperBuildEvents(vector< vector<decoded_packet> > & CurrentData, const int fd)
 {
   // I don't know how many of these need to be static
-  static DataVector::iterator CurrentDataIt[maxUSB];
-  static DataVector MinData; // Current minimum data packets
+  static vector<decoded_packet>::iterator CurrentDataIt[maxUSB];
+  static vector<decoded_packet> MinData; // Current minimum data packets
   static decoded_packet MinDataPacket; // Minimum and Last Data Packets added
   static vector<int> MinIndex; // USB indices of Minimum Data Packet
-  static DataVector ExtraData; // carries over events from last time stamp
+  static vector<decoded_packet> ExtraData;// carries events from last timestamp
   static vector<int> ExtraIndex;
 
   unsigned int EventCounter = 0;
@@ -850,7 +834,7 @@ static void DecodeFileSet()
 // have been met. A "subrun" is the set of data read in this way. All
 // data for a subrun is kept in memory together so that it can be sorted
 // by time.
-static void read_in_for_subrun(vector<DataVector> & CurrentData)
+static void read_in_for_subrun(vector< vector<decoded_packet> > & CurrentData)
 {
   for(int nfilesets = 0; nfilesets < max_filesets_subrun; nfilesets++){
     // Open set of files
@@ -875,7 +859,8 @@ static void read_in_for_subrun(vector<DataVector> & CurrentData)
 // Reads data and writes out subrun files until there's no more to do.
 static void MainBuild()
 {
-  vector<DataVector> CurrentData(maxUSB); // for current timestamp to process
+  // for current timestamp to process
+  vector< vector<decoded_packet> > CurrentData(maxUSB);
 
   for(unsigned int subrun = 0; !run_has_ended; subrun++){
     read_in_for_subrun(CurrentData);

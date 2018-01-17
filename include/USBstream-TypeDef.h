@@ -1,7 +1,3 @@
-// Size of an ADC "packet" (glittery quotation marks) array after
-// USBStream::decode(), with exactly 1 hit.
-const unsigned int MIN_ADC_PACKET_SIZE = 7;
-
 // A hit after decoding.  Happens to be the same as a OVHitData, but
 // semantically this is the in-memory format.
 struct decoded_hit {
@@ -25,5 +21,3 @@ struct decoded_packet {
   uint32_t time16ns;
   std::vector<decoded_hit> hits;
 };
-
-typedef std::vector<decoded_packet> DataVector;

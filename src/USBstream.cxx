@@ -61,12 +61,12 @@ void USBstream::SetBaseline(
       baseline[i][j] = std::max(0, baseptr[i][j]);
 }
 
-void USBstream::GetBaselineData(DataVector *vec)
+void USBstream::GetBaselineData(std::vector<decoded_packet> *vec)
 {
   if(!vec->empty())
     log_msg(LOG_CRIT, "Expected vec to be empty for GetBaselineData()\n");
 
-  for(DataVector::iterator i = sortedpackets.begin();
+  for(std::vector<decoded_packet>::iterator i = sortedpackets.begin();
       i != sortedpackets.end(); i++)
     if(!i->hits.empty())
       vec->push_back(*i);
@@ -80,7 +80,8 @@ void USBstream::GetBaselineData(DataVector *vec)
 // Appends all decoded data to 'vec' up to the next change of Unix time stamp
 // or the end of the decoded data, whichever is sooner.  In the former case,
 // returns true, otherwise false.
-bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
+bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(
+  std::vector<decoded_packet> & vec)
 {
   if(sortedpacketsptr == sortedpackets.end()){
     log_msg(LOG_NOTICE, "No decoded data to send (Unix time stamp %lu) "
@@ -299,12 +300,18 @@ void USBstream::raw16bit_to_packets()
 
       unsigned int len = raw16bitdata[ADC_WIDX_MODLEN] & 0xff;
       if(len == 0) continue;
+
+      // we don't have all the data in this packet yet
       if(raw16bitdata.size() < len + 1) break;
+
+      got_packet = true;
 
       unsigned int parity = 0;
       decoded_packet packet;
       packet.timeunix = ((uint32_t)unix_time_hi << 16) + unix_time_lo;
       packet.module = (raw16bitdata[ADC_WIDX_MODLEN] >> 8) & 0x7f;
+      if(packet.module > 63)
+        log_msg(LOG_ERR, "Invalid module number %u\n", packet.module);
       packet.isadc = raw16bitdata[ADC_WIDX_MODLEN] >> 15;
       bool allhits  [64] = {0}; // which channels were hit
       bool threshits[64] = {0}; // which channels were hit over threshold
@@ -312,44 +319,23 @@ void USBstream::raw16bit_to_packets()
       for(unsigned int wordi = ADC_WIDX_MODLEN; wordi < len; wordi++){
         parity ^= raw16bitdata[wordi];
 
-        if(wordi == ADC_WIDX_CLKLO) {
-          if(packet.module <= 63) {
-            const int low = (int)raw16bitdata[wordi] - offset[packet.module];
-            if(low < 0) {
-              const int high = (int)(packet.time16ns >> 16) - 1;
-
-              // sync packets come every 2^29 clock counts
-              const int highcorr = high < 0? high + (1 << 13): high;
-
-              packet.time16ns = (highcorr << 16) + low + (1 << 16);
-            }
-            else {
-              packet.time16ns |= low;
-            }
-          }
-          else {
-            log_msg(LOG_ERR, "Invalid module number %u\n", packet.module);
-            packet.time16ns |= raw16bitdata[wordi];
-          }
-        }
-        else if(wordi == ADC_WIDX_CLKHI) {
+        if(wordi == ADC_WIDX_CLKHI) {
           packet.time16ns |= (raw16bitdata[wordi] << 16);
         }
-        else { // we are in the words that give the hit info
-          if(packet.isadc) {
-            if(wordi%2 == 0 && // ADC charge
-               raw16bitdata[wordi+1] < 64 && packet.module < 64) {
-              const int adc = raw16bitdata[wordi]
-                - baseline[packet.module][raw16bitdata[wordi+1]];
+        else if(wordi == ADC_WIDX_CLKLO) {
+          packet.time16ns |= raw16bitdata[wordi];
+          packet.time16ns -= offset[packet.module];
+        }
+        else if(packet.isadc) { // we are in the words that give the hit info
+          // hits start on even numbered words
+          if(wordi%2 == 0 && raw16bitdata[wordi+1] < 64 && packet.module < 64) {
+            decoded_hit hit;
+            hit.channel = raw16bitdata[wordi+1];
+            hit.charge  = raw16bitdata[wordi] - baseline[packet.module][hit.channel];
+            packet.hits.push_back(hit);
 
-              allhits[raw16bitdata[wordi+1]] = true;
-              if(adc > mythresh) threshits[raw16bitdata[wordi+1]] = true;
-
-              decoded_hit hit;
-              hit.charge = adc;
-              hit.channel = raw16bitdata[wordi+1];
-              packet.hits.push_back(hit);
-            }
+            allhits[hit.channel] = true;
+            if(hit.charge > mythresh) threshits[hit.channel] = true;
           }
         }
       }
@@ -357,11 +343,9 @@ void USBstream::raw16bit_to_packets()
       if(parity != raw16bitdata[len])
         log_msg(LOG_WARNING, "Parity error in USB stream %d\n", myusb);
 
-      got_packet = true;
-
       if(!UseThresh || !packet.isadc || ThresholdCut(allhits, threshits)){
         // Slot this packet into place in time order, searching from the end
-        DataVector::iterator i = sortedpackets.end();
+        std::vector<decoded_packet>::iterator i = sortedpackets.end();
         while(i != sortedpackets.begin() && LessThan(packet, *(i-1), 0))
           i--;
         sortedpackets.insert(i, packet);
