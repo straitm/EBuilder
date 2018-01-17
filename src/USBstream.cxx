@@ -32,11 +32,6 @@ USBstream::USBstream()
   }
 }
 
-void USBstream::Reset()
-{
-  got_unix_time_hi = false;
-}
-
 void USBstream::SetOffset(const int module, const int off)
 {
   if(module < 0 || module >= 64){
@@ -152,7 +147,7 @@ int USBstream::LoadFile(std::string nextfile)
   return 0;
 }
 
-void USBstream::decode()
+void USBstream::decodefile()
 {
   top: // we return here if triggered by restart leading from finding
        // the first Unix timestamp packet, which means we have to go
@@ -168,7 +163,7 @@ void USBstream::decode()
   if(sortedpacketsptr <= sortedpackets.end())
     sortedpackets.assign(sortedpacketsptr, sortedpackets.end());
 
-  Reset();
+  got_unix_time_hi = false;
 
   struct stat fileinfo;
   if(stat(myfilename.c_str(), &fileinfo) == -1)
@@ -247,14 +242,14 @@ bool USBstream::got_word(uint32_t in24bitword)
     if(handle_unix_time_words(in24bitword)) return true;
 
     raw16bitdata.push_back(in24bitword & 0xffff);
-    check_data();
+    raw16bit_to_packets();
   }
   return false;
 }
 
-/* This function is called "check_data", but it is clearly not just
+/* This function was called "check_data", but it is clearly not just
  * checking.  It is decoding. */
-void USBstream::check_data()
+void USBstream::raw16bit_to_packets()
 {
   // ADC packet word indices.  As per Toups thesis:
   //

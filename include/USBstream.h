@@ -20,8 +20,6 @@ public:
 
   void SetBaseline(const int base[64 /* maxModules */][64 /* numChannels */]);
 
-  void Reset();
-
   int GetUSB() const { return myusb; }
   const char* GetFileName() { return myfilename.c_str(); }
   uint32_t GetTOLUTC() const { return mytolutc; }
@@ -29,7 +27,7 @@ public:
   bool GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec);
   void GetBaselineData(DataVector *vec);
   int LoadFile(const std::string nextfile);
-  void decode();
+  void decodefile();
 
 private:
 
@@ -49,13 +47,12 @@ private:
 
   // These functions are for the decoding
   bool got_word(uint32_t d);
-  void check_data();
+  void raw16bit_to_packets();
   bool handle_unix_time_words(const uint32_t wordin);
 
   // These variables are for the decoding
   int32_t words;
   bool got_unix_time_hi;
-  bool first_packet;
   uint16_t unix_time_hi;
   uint16_t unix_time_lo;
 

@@ -111,7 +111,7 @@ static long int *maxcount_16ns_hi; // for sync overflows for all boards
 // Decodes USB stream with array index *usbindex. For threading.
 static void * decode(void * usbindex)
 {
-  OVUSBStream[*((int *)usbindex)].decode();
+  OVUSBStream[*((int *)usbindex)].decodefile();
   return NULL;
 }
 
@@ -571,7 +571,7 @@ static bool GetBaselines()
   // Decode all files and load into memory
   for(unsigned int j = 0; j < numUSB; j++){
     log_msg(LOG_INFO, "Decoding baseline %d\n", j),
-    OVUSBStream[j].decode();
+    OVUSBStream[j].decodefile();
   }
 
   for(unsigned int i = 0; i < numUSB; i++) {
