@@ -26,7 +26,7 @@ public:
 
   bool GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec);
   void GetBaselineData(DataVector *vec);
-  int LoadFile(const std::string nextfile);
+  int LoadFile(const std::string & nextfile);
   void decodefile();
 
 private:
@@ -42,23 +42,20 @@ private:
   std::fstream *myFile;
   bool BothLayerThresh;
   bool UseThresh;
+
   DataVector sortedpackets;
   DataVector::iterator sortedpacketsptr;
+  std::deque<uint16_t> raw16bitdata;
 
   // These functions are for the decoding
-  bool got_word(uint32_t d);
+  bool raw24bit_to_raw16bit(uint32_t d);
   void raw16bit_to_packets();
   bool handle_unix_time_words(const uint32_t wordin);
 
   // These variables are for the decoding
-  int32_t words;
   bool got_unix_time_hi;
   uint16_t unix_time_hi;
   uint16_t unix_time_lo;
-
-  std::deque<uint16_t> raw16bitdata;
-
-  bool extra; // leftovers
 };
 
 struct OVHitData {

@@ -116,7 +116,7 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(DataVector & vec)
   return true;
 }
 
-int USBstream::LoadFile(std::string nextfile)
+int USBstream::LoadFile(const std::string & nextfile)
 {
   std::ostringstream smyfilename;
   smyfilename << nextfile << "_" << GetUSB();
@@ -207,7 +207,7 @@ void USBstream::decodefile()
         if(++expcounter == 4){
           expcounter = 0;
 
-          if(got_word(word)) { //24-bit word stored, process it
+          if(raw24bit_to_raw16bit(word)) { //24-bit word stored, process it
             sortedpackets.clear();
             raw16bitdata.clear();
             myFile->seekg(std::ios::beg);
@@ -232,7 +232,7 @@ void USBstream::decodefile()
 
 /* This would be better named "process_word()". Returns true if we need
  * to rewind to the beginning of the file. */
-bool USBstream::got_word(uint32_t in24bitword)
+bool USBstream::raw24bit_to_raw16bit(uint32_t in24bitword)
 {
   // Old comment here said "command word, not data" for the case that
   // the first two bits were 01b. Apparently there are 24 bit words
