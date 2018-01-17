@@ -39,19 +39,15 @@ The format of an event, where each tick represents one bit, is:
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |  Magic number = 0x4556 = "EV" |    Number of module packets   |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |                           Time stamp                          |
+   |                        Unix Time stamp                        |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |               .         module packets        .               |
    |               .               .               .               |
 
   Number of module packets: Unsigned 16 bit integer.
 
-    It is not expected to be greater than 0xff, but it is convenient to align
-    things to 32 bits.
-
-    TODO: I am not sure whether the number of module packets is always equal to
-    the number of modules with hits, or if they can be repeated in the case
-    where we string together a long event.
+    The number of module packets can be greater than the number of modules with
+    hits if an event is created out of a long string of hits in several modules.
 
   Time stamp: Unsigned 32 bit integer.
 
@@ -81,7 +77,7 @@ The format of a module packet is:
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |  Magic number | Count of hits |         Module number         |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |                          Time stamp                           |
+   |                   62.5 MHz counter time stamp                 |
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |               .              hits             .               |
    |               .               .               .               |
