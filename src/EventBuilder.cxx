@@ -187,6 +187,8 @@ static void check_status(const vector<string> & files)
 // Fills myfiles with a list of files in the given directory.
 //
 // These files are the set that does not have a dot in their name.
+// This excludes files that the DAQ is in the process of writing out,
+// which end with ".wr".
 //
 // Also exclude files with names containing "baseline" unless
 // 'allow_baseline' is true.
