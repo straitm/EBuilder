@@ -10,9 +10,8 @@
 #include <vector>
 #include <deque>
 
-//#include "USBstream.h" //Reversed the order of these includes because USBstreamUtils now defines decoded_packet
+#include "USBstream.h" 
 #include "USBstreamUtils.h"
-#include "USBstream.h"
 
 USBstream::USBstream()
 {

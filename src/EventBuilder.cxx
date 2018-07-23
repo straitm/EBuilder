@@ -22,9 +22,8 @@
 #include <deque>
 #include <vector>
 
-//#include "USBstream.h" //Reversed the order of these includes so that decoded_packet is defined before it is needed
+#include "USBstream.h" 
 #include "USBstreamUtils.h"
-#include "USBstream.h"
 
 using std::vector;
 using std::string;
