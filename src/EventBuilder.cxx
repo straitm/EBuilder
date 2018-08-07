@@ -22,7 +22,7 @@
 #include <deque>
 #include <vector>
 
-#include "USBstream.h" 
+#include "USBstream.h"
 #include "USBstreamUtils.h"
 
 using std::vector;

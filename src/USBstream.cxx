@@ -10,7 +10,7 @@
 #include <vector>
 #include <deque>
 
-#include "USBstream.h" 
+#include "USBstream.h"
 #include "USBstreamUtils.h"
 
 USBstream::USBstream()
