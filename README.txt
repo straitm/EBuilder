@@ -113,3 +113,18 @@ The format of a hit is:
     value.  So we could store this in 13 bits, but there's no great motivation
     to pack the data so closely, especially because the minimum size of a hit
     is 18 bits, which I would tend to pad out to 32 anyway.
+
+============================ Configuration file format =========================
+4 singly-spaced columns of the form:
+
+USB_Serial PMT_Serial pmtboard_u pipedelay
+
+The first 4 columns come from the MYSQL database that you can see with:
+
+mysql -u CRT_DAQ -p
+use crt;
+SELECT USB_Serial, board_number, pmtboard_u, pipedelay FROM crt_downstream;
+quit;
+
+Where crt_downstream can be replaced by any of the tables that configure the 
+"manual" CRT perl DAQ scripts.  See test.config for an example.  

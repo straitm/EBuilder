@@ -41,7 +41,6 @@ clean:
 
 $(TMPDIR)/%.o: $(SRCDIR)/%.cxx \
                $(INCDIR)/USBstream.h \
-               $(INCDIR)/USBstream-TypeDef.h \
                $(INCDIR)/USBstreamUtils.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 

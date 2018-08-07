@@ -1,3 +1,6 @@
+//Forward declarations for classes that come from USBstreamUtils.h and will be included where they are needed
+struct decoded_packet;
+
 class USBstream {
 
 public:
