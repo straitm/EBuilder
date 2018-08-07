@@ -114,38 +114,17 @@ The format of a hit is:
     to pack the data so closely, especially because the minimum size of a hit
     is 18 bits, which I would tend to pad out to 32 anyway.
 
-=============================== Input file format ==============================
+============================ Configuration file format =========================
 4 singly-spaced columns of the form:
 
-USB_Serial PMT_Serial pmtboard_u timeOffset
+USB_Serial PMT_Serial pmtboard_u pipedelay
 
-The first 3 columns come from the MYSQL database that you can see with:
+The first 4 columns come from the MYSQL database that you can see with:
 
 mysql -u CRT_DAQ -p
 use crt;
-SELECT USB_Serial, board_number, pmtboard_u FROM crt_downstream;
+SELECT USB_Serial, board_number, pmtboard_u, pipedelay FROM crt_downstream;
 quit;
 
 Where crt_downstream can be replaced by any of the tables that configure the 
-"manual" CRT perl DAQ scripts.  
-TODO: Figure out reasonable values for timeOffset.  I'm just using 0 for now for testing.
-
-Example for all downstream modules:
-
-#USB_Serial PMT_Serial pmtboard_u
-3 16 116 0
-3 17 117 0
-22 20 120 0
-22 21 121 0
-22 22 122 0
-22 27 127 0
-22 25 125 0
-3 29 129 0
-3 30 130 0
-3 31 131 0
-3 18 118 0
-3 19 119 0
-22 23 123 0
-22 26 126 0
-22 24 124 0
-3 28 128 0
+"manual" CRT perl DAQ scripts.  See test.config for an example.  
