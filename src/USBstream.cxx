@@ -206,8 +206,11 @@ void USBstream::decodefile()
         if(++expcounter == 4){
           expcounter = 0;
 
+          // Add data to sortedpackets, but if we need to rewind to the
+          // beginning of the file, throw it all away again.
           if(raw24bit_to_raw16bit(word)) { //24-bit word stored, process it
             sortedpackets.clear();
+            sortedpacketsptr = sortedpackets.begin();
             raw16bitdata.clear();
             myFile->seekg(std::ios::beg);
             goto top;
