@@ -13,6 +13,7 @@ void log_msg(const int priority, const char * const format, ...)
   va_list ap;
   va_start(ap, format);
   vprintf(format, ap);
+  va_end(ap);
 
   // Always send the message to syslog, regardless of level. Syslog
   // policy set by the machine administrator determines which priority
@@ -20,6 +21,7 @@ void log_msg(const int priority, const char * const format, ...)
   // https://www.gnu.org/software/libc/manual/html_node/Syslog.html
   va_start(ap, format);
   vsyslog(LOG_MAKEPRI(LOG_DAEMON, priority), format, ap);
+  va_end(ap);
 
   // On Linux, more severe levels are lower numbers, but nothing I've
   // read suggests that this is standardized, so check individually.
