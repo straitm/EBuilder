@@ -18,11 +18,13 @@ USBstream::USBstream()
   sortedpacketsptr = sortedpackets.end();
   mythresh=0;
   myusb=-1;
+  unix_time = 0;
   got_unix_time_hi = false;
   unix_time_hi = 0;
   unix_time_lo = 0;
   BothLayerThresh = false;
   UseThresh = false;
+  myFile = NULL;
   for(int i = 0; i < 32; i++) { // Map of adjacent channels
     adj1[i] = i+32;
     if(i==0) adj2[i] = adj1[i];
@@ -85,7 +87,7 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(
 {
   if(sortedpacketsptr == sortedpackets.end()){
     log_msg(LOG_NOTICE, "No decoded data to send (Unix time stamp %lu) "
-      "for USB %d\n", mytolutc, myusb);
+      "for USB %d\n", unix_time, myusb);
     return false;
   }
 
@@ -96,19 +98,19 @@ bool USBstream::GetDecodedDataUpToNextUnixTimeStamp(
 
     const uint32_t new_time = sortedpacketsptr->timeunix;
 
-    if(new_time > mytolutc) break;
+    if(new_time > unix_time) break;
   }
 
   if(sortedpacketsptr == sortedpackets.end()){
     log_msg(LOG_NOTICE, "Sent decoded data up to end (Unix time stamp "
-      "%lu) for USB %d\n", mytolutc, myusb);
+      "%lu) for USB %d\n", unix_time, myusb);
     return false;
   }
 
-  mytolutc = sortedpacketsptr->timeunix;
+  unix_time = sortedpacketsptr->timeunix;
 
   log_msg(LOG_NOTICE, "Sent decoded data up to Unix time stamp %lu for "
-    "USB %d\n", mytolutc, myusb);
+    "USB %d\n", unix_time, myusb);
 
   sortedpacketsptr++; // Point at the next packet after the Unix timestamp
 
@@ -413,8 +415,8 @@ bool USBstream::handle_unix_time_words(const uint32_t wordin)
       // stamp is yet, now that we've found the Unix time stamp, set it
       // and start reading the file from the beginning, this time setting
       // the Unix time on each packet.
-      if(!mytolutc) {
-        mytolutc = ((uint32_t)unix_time_hi << 16) + unix_time_lo;
+      if(!unix_time) {
+        unix_time = ((uint32_t)unix_time_hi << 16) + unix_time_lo;
         return true; // rewind file and get times set this time
       }
     }

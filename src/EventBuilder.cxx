@@ -875,7 +875,7 @@ static void MainBuild()
     write_end_block_and_close(fd);
 
     log_msg(LOG_INFO, "Number of built events: %d\nProcessed time stamp: %d\n",
-            EventCounter, OVUSBStream[0].GetTOLUTC());
+            EventCounter, OVUSBStream[0].GetUnixTime());
   }
 }
 

@@ -25,7 +25,7 @@ public:
 
   int GetUSB() const { return myusb; }
   const char* GetFileName() { return myfilename.c_str(); }
-  uint32_t GetTOLUTC() const { return mytolutc; }
+  uint32_t GetUnixTime() const { return unix_time; }
 
   bool GetDecodedDataUpToNextUnixTimeStamp(std::vector<decoded_packet> & vec);
   void GetBaselineData(std::vector<decoded_packet> *vec);
@@ -40,7 +40,7 @@ private:
   int offset[64 /* maxModules */];
   int adj1[64];
   int adj2[64];
-  uint32_t mytolutc;
+  uint32_t unix_time;
   std::string myfilename;
   std::fstream *myFile;
   bool BothLayerThresh;
