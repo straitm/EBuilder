@@ -150,10 +150,10 @@ static int check_disk_space(const string & dir)
 
 static void check_status(const vector<string> & files)
 {
-  static int Ddelay = 0;
   // Performance monitor
   const int f_delay = (int)(latency*files.size()/numUSB/20);
   if(f_delay != OV_EB_State) {
+    static int Ddelay = 0;
     if(f_delay > OV_EB_State) {
       if(OV_EB_State <= initial_delay) { // OV EBuilder was not already behind
         log_msg(LOG_NOTICE, "Falling behind processing files\n");
@@ -195,7 +195,7 @@ static void check_status(const vector<string> & files)
 //
 // Return true if no files are found that satisfy those rules, including if
 // the directory couldn't be read.  Otherwise, returns false.
-static bool GetDir(const std::string dir, std::vector<std::string> &myfiles,
+static bool GetDir(const std::string & dir, std::vector<std::string> &myfiles,
                    const bool allow_baseline = false)
 {
   DIR *dp;
@@ -298,7 +298,6 @@ static bool OpenNextFileSet()
 
   vector<string>::iterator filesit = files.begin();
 
-  int status = 0;
   string base_filename;
   for(unsigned int k=0; k<numUSB; k++) {
     const size_t fname_it_delim = filesit->find(fdelim);
@@ -309,6 +308,7 @@ static bool OpenNextFileSet()
     base_filename=InputDir;
     base_filename.append("/");
     base_filename.append(ftime_min);
+    int status = 0;
     if( (status = OVUSBStream[k].LoadFile(base_filename)) < 1 ) // Can't load file
       return status;
 
