@@ -15,6 +15,7 @@
 
 USBstream::USBstream()
 {
+  sortedpacketsptr = sortedpackets.end();
   mythresh=0;
   myusb=-1;
   got_unix_time_hi = false;
