@@ -6,7 +6,6 @@
 
 #include <vector>
 
-//TODO: This include seemed to be missing 
 #include "USBstreamUtils.h"
 
 void log_msg(const int priority, const char * const format, ...)

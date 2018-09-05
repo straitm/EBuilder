@@ -126,5 +126,5 @@ use crt;
 SELECT USB_Serial, board_number, pmtboard_u, pipedelay FROM crt_downstream;
 quit;
 
-Where crt_downstream can be replaced by any of the tables that configure the 
-"manual" CRT perl DAQ scripts.  See test.config for an example.  
+Where crt_downstream can be replaced by any of the tables that configure the
+"manual" CRT perl DAQ scripts.  See test.config for an example.
